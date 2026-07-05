@@ -1,0 +1,3 @@
+sd=systeminfo $G sysinfo.txt
+df=dir $1 /b $B findstr /I "$2"
+catfi=type $1 $B find /I $2
