@@ -11,6 +11,7 @@
 #
 ############################################################################
 
+__version__ = "1.0.0"
 
 import cmd
 import os
@@ -76,7 +77,12 @@ class PyEmulatedCMD(cmd.Cmd):
         self.current_env = inherited_env if inherited_env else dict(os.environ)
         self.drive_dirs = inherited_drives if inherited_drives else {}
         self.macros = inherited_macros if inherited_macros else {}
-        self.title = inherited_title if inherited_title else ""
+        if inherited_title:
+            self.title = inherited_title 
+        else:
+            self.title = "PyWinCMD"
+        os.system(f"title {self.title}")
+
         try:
             self.current_codepage = ctypes.windll.kernel32.GetConsoleCP()
         except Exception as e:
@@ -91,13 +97,13 @@ class PyEmulatedCMD(cmd.Cmd):
         # History Management
         self.history = []
         self.history_index = 0
-        
+
         self.update_prompt_visual()
         self.show_help_f1()
 
     def show_help_f1(self):
         cols = shutil.get_terminal_size((120, 30)).columns
-        help_title = "PyWinCMD HELP"
+        help_title = f"PyWinCMD HELP (v{__version__})"
         num_spcs  = 1/2 * (cols - len(help_title))
         spcs = int(num_spcs) * ' ' 
         help_title = spcs + help_title + spcs
@@ -138,7 +144,6 @@ Advanced Feature - DOSKEY:
   - For help on creating and managing macros:  DOSKEY /?  or  HELP DOSKEY
   """
 )
-
 
 
     def select_from_native_file_chooser(self, filtro=None, tipo="load"):
@@ -972,8 +977,16 @@ ______ Typed ______________________________________ Result _____________________
                     if os.path.exists(first_token):
                         first_token_path = first_token
                     else: 
-                        first_token_path = shutil.which(first_token)  # this which() function returns ONLY one path, whichever has precedence in the path
-
+                        # Below We check if the command/program/script is in the PATH.
+                        # WHY? (we could NOT check at all, and the native CMD would find it in t he PATH - or not). 
+                        # The problem is: if the program is an executable EXE that has Windows GUI, and we just call
+                        # it from our temporary BAT file, then our PyWinCMD prompt will be blocked until the 
+                        # called program is finished (could be MS-Excel, MS-Word, Notepad etc.). That is NOT good !
+                        # So, we find the executable in the PATH to be able to check wether it's a GUI type. If it is,
+                        # the program is called WITHOUT a temporary BAT, and the call does NOT block. 
+                        curr_path=self.current_env.get('PATH', os.environ['PATH'])
+                        # the which() function returns ONLY one path, whichever has precedence in the PATH
+                        first_token_path = shutil.which(first_token, path=curr_path)
                     if not first_token_path:
                         # If it is NOT in the PATH, then we consider it an INTERNAL COMMAND (e.g., DIR, ECHO, SET), and it will be enveloped in a temp batch.
                         # Note: 'associated' files to apps, like XLSX, DOCX etc, are ALSO found if they are in the PATH, and that is the desired behavior
@@ -985,7 +998,7 @@ ______ Typed ______________________________________ Result _____________________
     #                   print("Executable: " + execution_line)
                         p_lower = first_token_path.lower()
                         # Found in the PATH and it's a *.BAT or *.CMD file, we will also envelope in temp batch 
-                        # (to be able to recover the STATE and also because otherwise it will NOT be interactive)  
+                        # (to be able to recover the STATE and  because otherwise it will NOT be interactive)  
                         if  p_lower.endswith( ('.bat', '.cmd',) ):
                             execution_line = f"call {execution_line}"
     #                        print("Cmd or Bat: " + execution_line)
@@ -1087,7 +1100,7 @@ set
                 # same 'command prompt', until the called program is finished.  After that, our simulated
                 # 'prompt' reappears again. 
                 # It even allows running another 'python' interactively inside our prompt window!
-                subprocess.run(f'cmd.exe /c "{bat_path}"', 
+                subprocess.run(f'cmd /c "{bat_path}"', 
                             cwd=self.current_dir, 
                             )
             except KeyboardInterrupt:
@@ -1098,7 +1111,7 @@ set
 
             # --- ENVIRONMENT STATE SYNCHRONIZATION ---
             if not update_state_after_batch:
-                # Recovers the title; it would only have changed if the given command was 'cmd /c' setting a new TITLE, 
+                # Recovers the title; it could have changed if the given command was 'cmd /c' setting a new TITLE, 
                 # something unlikely to occur, but we guarantee it behaves consistently. 
                 subprocess.run(f'cmd.exe /c "TITLE {self.title}"')
 
@@ -1180,6 +1193,7 @@ set
     def emptyline(self):
         pass
 #End-of-class
+
 
 
 if __name__ == '__main__':
