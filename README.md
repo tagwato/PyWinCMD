@@ -1,5 +1,5 @@
 ![](images/PWC.png)  
-<br>
+<br><br>
 
 # PyWinCMD
 Python program that simulates the command prompt on Windows systems.  
@@ -26,38 +26,39 @@ Alternatively, PyWinCMD can be used together with a portable version of Python.
 <br>
 PyWinCMD online help:
 
-![PyWinCMD online help](images/PyWinCMD%20Help%20message.png)
+<img src="images/PyWinCMD%20Help%20message.png" alt="PyWinCMD online help" style="border: 1px solid white; border-radius: 8px;">
 <br><br><br>
 
 Some commands executed in PyWinCMD prompt:
 
-![Some commands executed in PyWinCMD prompt](images/Some%20commands.png)
+<img src="images/Some%20commands.png" alt="Some commands executed in PyWinCMD prompt" style="border: 1px solid white; border-radius: 8px;">
 <br><br><br>
 
 Interative commands/programs executed in PyWinCMD prompt:
 
-![Interative commands/programs executed in PyWinCMD prompt](images/Interative%20commands.png)
+<img src="images/Interative%20commands.png" alt="Interative commands/programs executed in PyWinCMD prompt" style="border: 1px solid white; border-radius: 8px;">
 <br><br><br>
 
 Activating other Python virtual environments from PyWinCMD prompt:
 
-![Activating other Python virtual environments from PyWinCMD prompt](images/Executing%20Python%20virtual%20environments.png)
+<img src="images/Executing%20Python%20virtual%20environments.png" alt="[Activating other Python virtual environments from PyWinCMD prompt" style="border: 1px solid white; border-radius: 8px;">
 <br><br><br>
 
 Native Help for CMD commands:
 
-![Native Help for CMD commands](images/Native%20HELP%20for%20CMD%20commands.png)
+<img src="images/Native%20HELP%20for%20CMD%20commands.png" alt="Native Help for CMD commands" style="border: 1px solid white; border-radius: 8px;">
 <br><br><br>
 
-Customization via Windows Terminal 'Settings' menu.  
+Customization is possible via Windows Terminal 'Settings' menu.  
 It's advisable to create a new profile for PyWinCMD and configure it:
 
-![Customization via Windows Terminal 'Settings' menu](images/Settings%20via%20Windows%20Terminal.png)
+<img src="images/Settings%20via%20Windows%20Terminal.png" alt="[Customization via Windows Terminal 'Settings' menu" style="border: 1px solid white; border-radius: 8px;">
 <br><br><br>
 
 Customizing appearance (fonts,foreground and background colors etc.) for a PyWinCMD profile:
 
-![Appearance customization (fonts,foreground and background colors etc.)](images/Appearance%20settings%20via%20Windows%20Terminal.png)
+<img src="images/Appearance%20settings%20via%20Windows%20Terminal.png" alt="Customizing appearance for a PyWinCMD profile" style="border: 1px solid white; border-radius: 8px;">
 <br><br><br>
 
-
+# License
+PyWinCMD is licensed for use, modification and distribution under the terms of Mozilla Public License version 2.0 (MPL-2.0).  
