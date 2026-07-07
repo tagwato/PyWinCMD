@@ -129,7 +129,7 @@ Navigation Keys and Shortcuts:
   [ ESC ]          : Clears the entire command line being typed
   [ Ctrl+, ]       : Opens the 'Windows Terminal' settings window, if available
 
-Almost all Windows 'CMD' commands can be executed. Type HELP to list them.
+All 'CMD' commands can be executed. Type HELP to list them.
 Note: SETLOCAL, PUSHD, and COLOR executed in PyWinCmd prompt do NOT persist (They work normally inside a BAT/CMD).
 For help on a specific 'CMD' command, type <<command>> /? or HELP <<command>> 
   - Examples:  COPY /?   or   help COPY
