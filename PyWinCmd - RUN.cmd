@@ -1,17 +1,25 @@
 
 @echo off
+setlocal enabledelayedexpansion
+@REM Use SCRIPTDIR throughout the code, instead of ~dp0, because if ~dp0 used AFTER a CD, then bad things happen 
+set "SCRIPT_DIR=%~dp0"
+set "SCRIPT_NAME_WITH_PATH=%~f0"
 
-@REM Atualizamos o caminho do *.cmd e do ícone, no atalho que executa o PyWincmd, se houver. 
-@REM Isso é para garantir que o ícone apareça, quando instalar/mover para outras pastas
-if exist "%~dp0\images\PWC3.ico" (
+@REM Ensures it is running in the location where this script is located
+cd /D "%SCRIPT_DIR%" 
+
+@REM Update the *.cmd path and the icon path in the shortcut that launches PyWincmd, if it exists.
+@REM This ensures the icon is displayed correctly if the installation folder has been moved.
+set "ICON_PATH=%SCRIPT_DIR%\images\PWC_128x128.ico"
+if exist "%ICON_PATH%" (
     powershell -NoProfile -ExecutionPolicy Bypass -Command ^
         "$ws = New-Object -ComObject WScript.Shell; " ^
-        "$s = $ws.CreateShortcut('%~dp0\PyWinCmd - RUN.lnk'); " ^
-        "$s.Arguments = 'pWc'; " ^
-        "$s.TargetPath = '%~f0'; " ^
-        "$s.WorkingDirectory = '%~dp0'; " ^
-        "$s.IconLocation = '%~dp0\images\PWC3.ico'; " ^
+        "$s = $ws.CreateShortcut('%SCRIPT_DIR%\PyWinCMD - RUN.lnk'); " ^
+        "$s.Arguments = '' "; ^
+        "$s.TargetPath = '%SCRIPT_NAME_WITH_PATH%'; " ^
+        "$s.WorkingDirectory = '%SCRIPT_DIR%'; " ^
+        "$s.IconLocation = '%ICON_PATH%'; " ^
         "$s.Save();"
-)
+) 
 
-cmd /c " python ".\src\pywincmd.py" "
+cmd /c " python "%SCRIPT_DIR%\src\pywincmd.py" "
