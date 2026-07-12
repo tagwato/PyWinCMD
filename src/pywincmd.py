@@ -11,7 +11,7 @@
 #
 ############################################################################
 
-__version__ = "1.0.0"
+__version__ = "1.0.1"
 
 import cmd
 import os
@@ -28,35 +28,44 @@ import ctypes
 import struct
 
 
-# ANSI Foreground colors:
-BLACK = '\033[30m'
-RED = '\033[31m'
-GREEN = '\033[32m'
-YELLOW = '\033[33m' # orange on some systems
-BLUE = '\033[34m'
-MAGENTA = '\033[35m'
-CYAN = '\033[36m'
-WHITE = '\033[97m'
-# ANSI:RGB foreground colors:
-FG_DGRAY =  "\x1b[38;2;80;80;80m" 
+
+# Some ANSI colors (RGB)
+# See more at:   https://en.wikipedia.org/wiki/ANSI_escape_code
+#         AND:   https://rgbcolorpicker.com/
+#         and:   https://gist.github.com/fnky/458719343aabd01cfb17a3a4f7296797  <<-- has codes for bold, blink, italic etc.
+#  \x1b[38;2;r;g;bm  <<--- foreground template
+#  \x1b[48;2;r;g;bm  <<--- background template
+#--------  FOREGROUND
+FG_WHITE =  "\x1b[38;2;255;255;255m"  
+FG_BLACK =  "\x1b[38;2;0;0;0m"  
+FG_RED   =  "\x1b[38;2;255;0;0m"  
+FG_GREEN =  "\x1b[38;2;0;255;0m"  
+FG_BLUE  =  "\x1b[38;2;0;0;255m"  
+FG_YELLOW=  "\x1b[38;2;255;255;0m"
+FG_PURPLE=  "\x1b[38;2;255;0;255m"
+FG_CYAN  =  "\x1b[38;2;0;255;255m"
+FG_ORANGE =  "\x1b[38;2;255;180;0m"
+FG_DGRAY =  "\x1b[38;2;80;80;80m"
 FG_LGRAY =  "\x1b[38;2;128;128;128m"
-
-
-# ANSI Background colors
-BG_BLACK = '\033[40m'
-BG_RED = '\033[41m'
-BG_GREEN = '\033[42m'
-BG_YELLOW = '\033[43m' # orange on some systems
-BG_BLUE = '\033[44m'
-BG_MAGENTA = '\033[45m'
-BG_CYAN = '\033[46m'
-BG_WHITE = '\033[107m'
-# ANSI:RGB background colors:
+#--------  BACKGROUND
+BG_WHITE =  "\x1b[48;2;255;255;255m"  
+BG_BLACK =  "\x1b[48;2;0;0;0m"  
+BG_RED   =  "\x1b[48;2;255;0;0m"  
+BG_GREEN =  "\x1b[48;2;0;255;0m"  
+BG_DGREEN = "\x1b[48;2;0;105;0m"
+BG_BLUE  =  "\x1b[48;2;0;0;255m"  
+BG_YELLOW=  "\x1b[48;2;255;255;0m"
+BG_PURPLE=  "\x1b[48;2;255;0;255m"
+BG_DPURPLE = "\x1b[48;2;105;0;105m"
+BG_CYAN  =  "\x1b[48;2;0;255;255m"
+BG_ORANGE =  "\x1b[48;2;255;180;0m"
 BG_DGRAY =  "\x1b[48;2;80;80;80m"
 BG_LGRAY =  "\x1b[48;2;128;128;128m"
 BG_CARMIN = "\x1b[48;2;72;0;0m"
 
-RSTCLR   = '\033[0m' # called to return to standard terminal text colors
+#--------- RESET -----
+RST_CLR =  "\x1b[0m"   #<<---- this DOES NOT reset bold, italic, blink, but there are other reset codes, see 3rd link above
+
 
 
 
@@ -112,7 +121,7 @@ class PyEmulatedCMD(cmd.Cmd):
         elif len(help_title) > cols:
             help_title = help_title[:-1]
  
-        print("\n" + BLACK + BG_CYAN + help_title + RSTCLR)
+        print("\n" + FG_BLACK + BG_CYAN + help_title + RST_CLR)
         print("PyWinCMD simulates the CMD prompt on Windows systems. " 
               "It's useful when access to the native prompt is restricted. " 
               "The environment state is preserved throughout the execution of commands (directories, variables, doskey macros, codepage)."
@@ -185,7 +194,7 @@ if defined {pwc_var} (
         try:
             subprocess.run(f'cmd.exe /c "{bat_path}"', cwd=self.current_dir) 
         except KeyboardInterrupt:  # IF Ctrl+C is pressed during batch execution
-            print(YELLOW + "\n[PWC] BAT process interrupted by the user. Moving on..." + RSTCLR)
+            print(FG_YELLOW + "\n[PWC] BAT process interrupted by the user. Moving on..." + RST_CLR)
             return None
 
         # Now we read the file where the BAT wrote the chosen file name
@@ -225,7 +234,7 @@ if defined {pwc_var} (
             if file_chooser:  # We will use the native Dialog to get the filepath
                 filepath = self.select_from_native_file_chooser(tipo='save')
                 if not filepath:  #<-- If selection was canceled inside the FileChooser
-                    print(YELLOW + "Operation canceled!" + RSTCLR)
+                    print(FG_YELLOW + "Operation canceled!" + RST_CLR)
                     return False
             else:             # We will use the command line to get the filepath
                 prompt_str = "File to save [D = default 'state_pywincmd.json', start of name+TAB = autocomplete, ESC clears, C = cancel]:"
@@ -233,7 +242,7 @@ if defined {pwc_var} (
                     filepath = self.get_user_input_from_native_CMD(prompt_str)
 
                 if filepath.strip().upper() == "C":   # If C+ENTER was typed at the input, cancel the saving
-                    print(YELLOW + "Operation canceled by user" + RSTCLR)
+                    print(FG_YELLOW + "Operation canceled by user" + RST_CLR)
                     return False
                 elif  filepath.strip().upper() == "D":  #  D = Default state filename 
                     filepath = "state_pywincmd.json"
@@ -249,7 +258,7 @@ if defined {pwc_var} (
                     except:  # if Ctrl+C is pressed during this input() call, it lands here
                         resp = 'N'
                     if resp and resp.upper().startswith('N'):
-                        print(YELLOW + "Operation canceled!" + RSTCLR)
+                        print(FG_YELLOW + "Operation canceled!" + RST_CLR)
                         return False
                 
         state_data = {
@@ -269,7 +278,7 @@ if defined {pwc_var} (
             return True
         except Exception as e:
             print(e)
-            print(RED + f"[ERROR] Failed to save state to: {filepath}\n" + RSTCLR)
+            print(FG_RED + f"[ERROR] Failed to save state to: {filepath}\n" + RST_CLR)
             return False
 
 
@@ -279,7 +288,7 @@ if defined {pwc_var} (
         if file_chooser:  # We will use the native Dialog to get the filepath
             filepath = self.select_from_native_file_chooser(tipo='load')
             if not filepath:  #<-- If selection was canceled inside the FileChooser
-                print(YELLOW + "Operation canceled!" + RSTCLR)
+                print(FG_YELLOW + "Operation canceled!" + RST_CLR)
                 return False
         else:             # We will use the command line to get the filepath
             prompt_str = "File to load [D = default 'state_pywincmd.json', start of name+TAB = autocomplete, ESC clears, C = cancel]:"
@@ -288,7 +297,7 @@ if defined {pwc_var} (
                 filepath = self.get_user_input_from_native_CMD(prompt_str)
 
             if filepath.strip().upper() == "C":   # If C+ENTER was typed at the input, cancel the loading
-                print(YELLOW + "Operation canceled by user" + RSTCLR)
+                print(FG_YELLOW + "Operation canceled by user" + RST_CLR)
                 return False
             elif  filepath.strip().upper() == "D":  #  D = Default state filename 
                 filepath = "state_pywincmd.json"
@@ -298,7 +307,7 @@ if defined {pwc_var} (
                 filepath = os.path.join(self.current_dir, filepath)
                 
             if not os.path.exists(filepath):
-                print(RED + f"[ERROR] File '{filepath}' not found!\n" + RSTCLR)
+                print(FG_RED + f"[ERROR] File '{filepath}' not found!\n" + RST_CLR)
                 return False
             
         try:
@@ -307,7 +316,7 @@ if defined {pwc_var} (
 
             tst_cur_dir = state_data.get("dir", self.current_dir)
             if not os.path.exists(tst_cur_dir):  #<<=== if removed/renamed after the file was saved
-                print(RED + "[ERROR] Directory name in the 'dir' key of the loaded file is invalid" + RSTCLR)
+                print(FG_RED + "[ERROR] Directory name in the 'dir' key of the loaded file is invalid" + RST_CLR)
                 return False
             
             # Handles possible removal/renaming of drives or paths mapped to them
@@ -315,7 +324,7 @@ if defined {pwc_var} (
             drive_dirs = state_data.get("drives", self.drive_dirs)  
             for d in drive_dirs.values():
                 if not os.path.exists(d): 
-                    print(RED + f"[ERROR] Directory name in the 'drive_dirs' key of the loaded file is invalid: '{d}'" + RSTCLR)
+                    print(FG_RED + f"[ERROR] Directory name in the 'drive_dirs' key of the loaded file is invalid: '{d}'" + RST_CLR)
                     return False
 
             self.title = state_data.get("title", self.title)
@@ -335,7 +344,7 @@ if defined {pwc_var} (
             return True
         except Exception as e:
             print(e)
-            print(RED + f"[ERROR] Failed to load state" + RSTCLR)
+            print(FG_RED + f"[ERROR] Failed to load state" + RST_CLR)
             return False
 
             
@@ -406,6 +415,41 @@ if defined {pwc_var} (
         print() # The native CMD prompt always put an empty line before the new prompt
         self.prompt = f"\033[96m[PWC]{resolved}\033[0m "
 
+
+    def get_native_console_size(self, fallback=(132, 28)):
+        """Gets the real console size (columns, lines) using native Windows API via ctypes."""
+        class COORD(ctypes.Structure):
+            _fields_ = [("X", ctypes.c_short), ("Y", ctypes.c_short)]
+
+        class SMALL_RECT(ctypes.Structure):
+            _fields_ = [("Left", ctypes.c_short), ("Top", ctypes.c_short),
+                        ("Right", ctypes.c_short), ("Bottom", ctypes.c_short)]
+
+        class CONSOLE_SCREEN_BUFFER_INFO(ctypes.Structure):
+            _fields_ = [("dwSize", COORD),
+                        ("dwCursorPosition", COORD),
+                        ("wAttributes", ctypes.c_ushort),
+                        ("srWindow", SMALL_RECT),
+                        ("dwMaximumWindowSize", COORD)]
+
+        STD_OUTPUT_HANDLE = -11
+        
+        try:
+            h_stdout = ctypes.windll.kernel32.GetStdHandle(STD_OUTPUT_HANDLE)
+            csbi = CONSOLE_SCREEN_BUFFER_INFO()
+            success = ctypes.windll.kernel32.GetConsoleScreenBufferInfo(h_stdout, ctypes.byref(csbi))
+            
+            if success:
+                # Calculate width and height from the visible window rectangle
+                cols = csbi.srWindow.Right - csbi.srWindow.Left + 1
+                lines = csbi.srWindow.Bottom - csbi.srWindow.Top + 1
+                return cols, lines
+        except Exception:
+            pass
+            
+        return fallback
+
+
     # =========================================================================
     # --- KEYBOARD READING AND NAVIGATION INTERFACE ---
     # =========================================================================
@@ -418,26 +462,50 @@ if defined {pwc_var} (
             ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
             visible_prompt = ansi_escape.sub('', self.prompt)
             prompt_len = len(visible_prompt)
-            cols = shutil.get_terminal_size((80, 20)).columns
+            
+            # 1. Try shutil first with a (1, 1) fallback
+            term_size = shutil.get_terminal_size((1, 1))
+            cols, lines = term_size.columns, term_size.lines
+            
+            # 2. If shutil fails and returns the fallback, use the native Windows API
+            if cols == 1 and lines == 1:
+                cols, lines = self.get_native_console_size(fallback=(150, 30))
+                
+            # Helper to calculate physical rows/cols perfectly modeling "deferred wrap"
+            def get_row_col(pos):
+                if pos == 0:
+                    return 0, 0
+                # (pos - 1) // cols keeps exact multiples (e.g. 80) on row 0 instead of row 1
+                return (pos - 1) // cols, (pos - 1) % cols + 1
+            
+            # Calculate where the cursor currently is physically
+            old_total_pos = prompt_len + old_cursor_pos
+            old_row, _ = get_row_col(old_total_pos)
             
             if not force_fresh:
-                current_row = (prompt_len + old_cursor_pos) // cols
-                if current_row > 0:
-                    sys.stdout.write(f"\033[{current_row}A") 
+                if old_row > 0:
+                    sys.stdout.write(f"\033[{old_row}A") # Move UP to the start of the prompt
                 sys.stdout.write("\r")
-                sys.stdout.write("\033[0J") 
+                sys.stdout.write("\033[0J") # Clear everything below
             
+            # Print the new prompt and buffer
             sys.stdout.write(self.prompt + new_buffer)
             
-            end_row = (prompt_len + len(new_buffer)) // cols
-            target_row = (prompt_len + new_cursor_pos) // cols
-            target_col = (prompt_len + new_cursor_pos) % cols
-            
-            rows_to_move_up = end_row - target_row
-            if rows_to_move_up > 0:
-                sys.stdout.write(f"\033[{rows_to_move_up}A")
+            # If the user is editing in the middle of the string, manually place the cursor
+            if new_cursor_pos < len(new_buffer):
+                end_total_pos = prompt_len + len(new_buffer)
+                end_row, _ = get_row_col(end_total_pos)
                 
-            sys.stdout.write(f"\033[{target_col + 1}G") 
+                target_total_pos = prompt_len + new_cursor_pos
+                target_row, target_col = get_row_col(target_total_pos)
+                
+                rows_to_move_up = end_row - target_row
+                if rows_to_move_up > 0:
+                    sys.stdout.write(f"\033[{rows_to_move_up}A")
+                    
+                # ANSI cursor columns are 1-based, target_col is already 0-based + 1 from get_row_col
+                sys.stdout.write(f"\033[{target_col + 1}G") 
+                
             sys.stdout.flush()
         
         tab_matches = []
@@ -462,7 +530,7 @@ if defined {pwc_var} (
 
             elif ch == "\x03":  # <<======== Ctrl+C 
                 if len(buffer) > 0:
-                    print(YELLOW + "\nTyping interrupted by Ctrl+C" + RSTCLR)
+                    print(FG_YELLOW + "\nTyping interrupted by Ctrl+C" + RST_CLR)
                 else:
                     print()
                 raise KeyboardInterrupt   # <-- the Ctrl+C will be handled in main()
@@ -495,13 +563,18 @@ if defined {pwc_var} (
                     cmd_part = text_to_complete.strip().split()[0].lower() if text_to_complete.strip() else ""
                     only_dirs = (cmd_part in ["cd", "chdir", "pushd", "tree"])
 
+                    # --- UPDATED LOGIC: Only record spaces that are OUTSIDE of quotes ---
                     in_quote = False
                     quote_start = -1
+                    unquoted_spaces = []
+                    
                     for i, char in enumerate(text_to_complete):
                         if char == '"':
                             in_quote = not in_quote
                             if in_quote:
                                 quote_start = i
+                        elif char == ' ' and not in_quote:
+                            unquoted_spaces.append(i)
 
                     matches = []
                     current_text = ""
@@ -511,13 +584,13 @@ if defined {pwc_var} (
                         current_text = text_to_complete[token_start:]
                         matches = self._path_completer(current_text, only_dirs=only_dirs)
                     else:
-                        space_indices = [i for i, char in enumerate(text_to_complete) if char == ' ']
                         found_match = False
-                        for space_idx in space_indices:
+                        # Use unquoted_spaces instead of searching indiscriminately
+                        for space_idx in unquoted_spaces:
                             test_start = space_idx + 1
                             test_text = text_to_complete[test_start:]
                             
-                            if not test_text and space_idx != space_indices[-1]:
+                            if not test_text and space_idx != unquoted_spaces[-1]:
                                 continue
                                 
                             m = self._path_completer(test_text, only_dirs=only_dirs)
@@ -528,7 +601,7 @@ if defined {pwc_var} (
                                 break
                                 
                         if not found_match:
-                            last_space = text_to_complete.rfind(' ')
+                            last_space = unquoted_spaces[-1] if unquoted_spaces else -1
                             token_start = last_space + 1 if last_space != -1 else 0
                             current_text = text_to_complete[token_start:]
                             matches = self._path_completer(current_text, only_dirs=only_dirs)
@@ -612,8 +685,20 @@ if defined {pwc_var} (
                     buffer = ""
                     cursor_pos = 0
             else:
-                buffer = buffer[:cursor_pos] + ch + buffer[cursor_pos:]
-                cursor_pos += 1
+                # --- PRO-TIP UX: LIVE QUOTE REMOVAL ---
+                # If the user types \ or / immediately after a closing quote, replace the quote with the slash
+                if ch in ("\\", "/") and cursor_pos > 0 and buffer[cursor_pos - 1] == '"':
+                    # Only remove if it is a closing quote (meaning we have an even number of quotes so far)
+                    if buffer[:cursor_pos].count('"') % 2 == 0:
+                        buffer = buffer[:cursor_pos - 1] + ch + buffer[cursor_pos:]
+                        # We DO NOT increment cursor_pos here because we removed a char (") and added a char (\),
+                        # so the cursor remains in the same absolute position.
+                    else:
+                        buffer = buffer[:cursor_pos] + ch + buffer[cursor_pos:]
+                        cursor_pos += 1
+                else:
+                    buffer = buffer[:cursor_pos] + ch + buffer[cursor_pos:]
+                    cursor_pos += 1
 
             draw_line(old_cursor_pos, buffer, cursor_pos, force_fresh)
 
@@ -705,7 +790,7 @@ if defined {pwc_var} (
             cmd_lower = cmd_clean.lower()
 
             # --- DOSKEY INTERCEPTION AND DEFINITION ---
-            if cmd_lower.startswith("doskey"):
+            if cmd_lower.startswith("doskey ") or cmd_lower.startswith("doskey/"):  # DoskeyBLABLA could be a file or pgm name, hence check for SPACE or /
                 args = cmd_clean[6:].strip()
                 args_lower = args.lower()
                 
@@ -784,7 +869,7 @@ ______ Typed ______________________________________ Result _____________________
                                 for key, value in self.macros.items():
                                     f.write(f"{key}={value}\n")
                         except Exception as e:
-                            print(RED + f"Error exporting macros file: {e}" + RSTCLR)
+                            print(FG_RED + f"Error exporting macros file: {e}" + RST_CLR)
                             
                         return False
                     else:
@@ -819,7 +904,7 @@ ______ Typed ______________________________________ Result _____________________
                                     else:
                                         self.macros[key] = value
                     except Exception as e:
-                        print(RED + f"Error processing macros file: {e}" + RSTCLR)
+                        print(FG_RED + f"Error processing macros file: {e}" + RST_CLR)
                     
                     return False
                 # --- Handling of /REINSTALL, which is equivalent to a 'reset' ---
@@ -864,7 +949,7 @@ ______ Typed ______________________________________ Result _____________________
                                 for cmd_line in self.history:
                                     f.write(f"{cmd_line}\n")
                         except Exception as e:
-                            print(RED + f"Error exporting history: {e}" + RSTCLR)
+                            print(FG_RED + f"Error exporting history: {e}" + RST_CLR)
                         return False
                     else:
                         return False
@@ -927,7 +1012,7 @@ ______ Typed ______________________________________ Result _____________________
                     cmd_lower = cmd_clean.lower()
 
             # Interception: EXIT
-            if cmd_lower == "exit":
+            if cmd_lower == "exit" or cmd_lower.startswith("exit/"):
                 opt = input("Closing emulator session... Do you want to Save the environment state (S/N)? ")
                 if opt.lower().startswith("s"):
                     self.save_state_f2()            
@@ -939,7 +1024,7 @@ ______ Typed ______________________________________ Result _____________________
                 self.title = args
 
             # Interception: START (Open new PyWinCmd window)
-            is_start_base = (cmd_lower == "start")
+            is_start_base = (cmd_lower == "start ") or (cmd_lower.startswith("start/"))
                     
             # IN CASE it's just 'START' without parameters, we start a new window of OUR PyWinCMD command prompt        
             if is_start_base:
@@ -962,112 +1047,190 @@ ______ Typed ______________________________________ Result _____________________
             # This even allows opening a native CMD window via 'START cmd', IF there are no restrictions/policies   
 
             # Prepares the execution line (Automatic enveloping in a temporary Batch for PS1, CMD, BAT and 'DOS' INTERNAL commands)
-            execution_line = user_command
-            match_first = re.match(r'^(?:\"([^\"]+)\"|(\S+))', cmd_clean)
+            execution_line = cmd_clean
+            match_first = re.match(r'^(?:\"([^\"]+)\"|(\S+))', cmd_clean) 
             
-            use_batch = True
-            assoc_file= False
-            update_state_after_batch = True
+            flag_assoc_file= False
+            flag_GUI_pgm= False
+            flag_cui_pgm= False
+            flag_ps1=False
+            flag_cmd_bat=False
+            flag_internal_command=False
+            update_state_after_batch=True
+            first_token = None
+            first_token_path = None
+            abs_path=False
             if match_first:
-                first_token = match_first.group(1) if match_first.group(1) else match_first.group(2)            
-                if first_token.lower().endswith('.ps1'):
-                    execution_line = f'powershell.exe -ExecutionPolicy Bypass -File {user_command}'
-                    update_state_after_batch = False  #  NOT need to update state, this is the native behavior
-                else:
-                    if os.path.exists(first_token):
-                        first_token_path = first_token
-                    else: 
-                        # Below We check if the command/program/script is in the PATH.
-                        # WHY? (we could NOT check at all, and the native CMD would find it in t he PATH - or not). 
-                        # The problem is: if the program is an executable EXE that has Windows GUI, and we just call
-                        # it from our temporary BAT file, then our PyWinCMD prompt will be blocked until the 
-                        # called program is finished (could be MS-Excel, MS-Word, Notepad etc.). That is NOT good !
-                        # So, we find the executable in the PATH to be able to check wether it's a GUI type. If it is,
-                        # the program is called WITHOUT a temporary BAT, and the call does NOT block. 
-                        curr_path=self.current_env.get('PATH', os.environ['PATH'])
-                        # the which() function returns ONLY one path, whichever has precedence in the PATH
-                        first_token_path = shutil.which(first_token, path=curr_path)
-                    if not first_token_path:
-                        # If it is NOT in the PATH, then we consider it an INTERNAL COMMAND (e.g., DIR, ECHO, SET), and it will be enveloped in a temp batch.
-                        # Note: 'associated' files to apps, like XLSX, DOCX etc, are ALSO found if they are in the PATH, and that is the desired behavior
-                        #        (but only when the user provides the extension; this is the same behavior of the native CMD)
-                        execution_line = user_command
-    #                   execution_line = f"call {user_command}"
-                    else: # The command/pgm was found in the PATH
-                        execution_line = user_command.replace(first_token, f'"{first_token_path}"')  # Important: Add quotes surrounding the path
-    #                   print("Executable: " + execution_line)
-                        p_lower = first_token_path.lower()
-                        # Found in the PATH and it's a *.BAT or *.CMD file, we will also envelope in temp batch 
-                        # (to be able to recover the STATE and  because otherwise it will NOT be interactive)  
-                        if  p_lower.endswith( ('.bat', '.cmd',) ):
-                            execution_line = f"call {execution_line}"
-    #                        print("Cmd or Bat: " + execution_line)
-                        elif  p_lower.endswith( ('.exe', '.com',) ):
-                            IMAGE_SUBSYSTEM_WINDOWS_GUI = 2
-                            IMAGE_SUBSYSTEM_WINDOWS_CUI = 3
-                            if self.get_exe_subsystem(first_token_path) == IMAGE_SUBSYSTEM_WINDOWS_GUI:  # GUI type / separate apps
-                                # Note that GUI programs, like NOTEPAD, or EXCEL.EXE fall here
-                                use_batch = False  # GUI type executable, we will execute WITHOUT the temp batch
-                            else:  # CUI type, console program, and can be interactive
-                                if p_lower.endswith( '.com' ):   #<--- CHCP.COM, MORE.COM etc. are caught here
-                                    use_batch = True 
-                                    update_state_after_batch = True # In this case, we NEED to update the state after the command! 
-                                else:
-                                    # Note that interactive programs, like PYTHON.EXE fall here
-                                    use_batch = True  # In this case, we NEED to use batch, otherwise it will NOT be interactive
-                                    update_state_after_batch = False  # But we do NOT need to update state, this is the native behavior
-                        else: 
-                            # If it was found in the PATH, but has OTHER extensions, like *.DOCX, *.VBS, *.XLSX etc.
-    #                        print("Assoc file: " + execution_line)
-                            use_batch = False
-                            assoc_file = True 
 
-            if cmd_lower.startswith("cmd /c ") or cmd_lower.startswith("cmd.exe /c "):
+                # LET's see if the user 'command' is an  absolut or relative 'path' , and use shutil.which() on it:
+                first_token = match_first.group(1) if match_first.group(1) else match_first.group(2) 
+                if first_token.startswith('\\'): # An absolute PATH was given, starting with '\'
+                    #This search PATHEXT extensions, if it was not given
+                    first_token_path = shutil.which(first_token) # Does NOT need the 'path' argument here
+                    abs_path = True
+                elif len(first_token) > 2 and first_token[1:3] == ':\\' : # An absolute PATH was given, starting with Drive letter
+                    #This search PATHEXT extensions, if it was not given
+                    first_token_path = shutil.which(first_token) # Does NOT need the 'path' argument here
+                    abs_path = True
+
+                # NOW, LET's search for the 'command' in the PATH, only extensions in PATHEXT are looked for 
+                if not first_token_path: # Check if a relative PATH as given
+                    # Below We check if the command/program/script is part of OUR tracked PATH.
+                    # WHY? (we could NOT check at all, and the native CMD would find it in t he PATH - or not). 
+                    # The problem is: if the program is an executable EXE that has Windows GUI, and we just call
+                    # it from our temporary BAT file, then our PyWinCMD prompt will be blocked until the 
+                    # called program is finished (could be MS-Excel, MS-Word, Notepad etc.). That is NOT good !
+                    # So, we find the executable in OUR path to be able to check wether it's a GUI type. If it is,
+                    # the program is called WITHOUT a temporary BAT, ensuring the call will NOT block. 
+                    curr_path=self.current_env.get('PATH', os.environ['PATH'])
+                    curr_path=self.current_dir + ";" + curr_path  #<<--- which() does NOT search in the current dir when the 'path' parameter is used, so we add it, to build a CMD-like behavior
+                    # the which() function returns ONLY one path, whichever has precedence in the PATH
+                    first_token_path = shutil.which(first_token, path=curr_path)
+                #End-if
+
+                # Not found yet, BUT it could be a file with extension NOT in PATHEXT, like *.xlsx, *.docx, etc
+                if not first_token_path:
+                    if abs_path:
+                        if os.path.exists(first_token):
+                            first_token_path = first_token
+                    else:
+                        if os.path.exists(self.current_dir + os.sep + first_token):  
+                            first_token_path = self.current_dir + os.sep + first_token
+
+                if not first_token_path:
+                    # If it is NOT in the PATH, then we consider it an INTERNAL COMMAND (e.g., DIR, ECHO, SET), 
+                    # and it will be enveloped in a temp batch. 
+                    flag_internal_command = True
+                    first_token_path = user_command
+                    arguments = ""
+
+                # At this point, any 'resolvable' extension would have been set in first_token_path, just like the native CMD would do  
+                else: # The command/pgm/partial-path etc, was found in the PATH
+
+                    #Get the arguments, but before check if user_command is surrounded by quotes:
+                    qfirst_token=f'\"{first_token}\"'
+                    if cmd_clean.startswith(qfirst_token): # It came with quotes!
+                        ft = qfirst_token
+                    else:
+                        ft = first_token
+                    # Now uses the correct surroundings to find the len() below:
+                    arguments=cmd_clean[len(ft):].strip()  # Treat as argument everything that comes after the 'command' 
+
+#                   print("Executable or associated file FOUND in path: " + first_token_path )
+                    p_lower = first_token_path.lower()
+
+                    # MUST test every case:
+                    if p_lower.endswith('.ps1'):
+                        flag_ps1 = True
+                    elif  p_lower.endswith( ('.bat', '.cmd',) ):
+                        flag_cmd_bat = True
+                    elif  p_lower.endswith( ('.exe', '.com',) ):
+                        IMAGE_SUBSYSTEM_WINDOWS_GUI = 2
+                        IMAGE_SUBSYSTEM_WINDOWS_CUI = 3
+                        if self.get_exe_subsystem(first_token_path) == IMAGE_SUBSYSTEM_WINDOWS_GUI:  # GUI type / separate apps
+                            # Note that GUI programs, like NOTEPAD, or EXCEL.EXE fall here
+                            flag_GUI_pgm = True
+                        else:  # It's an EXE/COM of type CUI: console program.... and it could be interactive
+                            # Also interactive CUI programs like PYTHON.EXE fall here
+                            flag_cui_pgm = True
+                    else: 
+                        # If file EXISTS,  but has NON EXECUTABLE extensions, like *.DOCX, *.VBS, *.XLSX etc, then it may be associated with some PGM
+#                        print('Assoc file command:   {first_token_path} {arguments}')
+                        flag_assoc_file = True 
+
+            if first_token_path.lower().endswith("cmd.exe") and arguments.lower().startswith("/c"):
                 update_state_after_batch= False  # We SHOULD NOT update state when the command is 'cmd /c', this is the correct native behavior
 
-            # --- EXECUTION of programs or associated files like XLSX or DOCX; for these cases we DO NOT need to save state
-            if not use_batch:
-    #            print("Batch will not be used")
-                try:
-                    if assoc_file:
-                        arguments=user_command[len(first_token):]  # Treat as argument everything that comes after the file name
-                        os.startfile(first_token_path, arguments=arguments, cwd=self.current_dir)
-                    else:
-                        # It's a GUI programa, like NOTEPAD.EXE or EXCEL.EXE etc.
-                        # We HAVE to call it via Popen() instead of run(), otherwise it will 'freeze' our command prompt.
-                        subprocess.Popen(execution_line,  cwd=self.current_dir )
-                except:
-                    print(YELLOW + "\n[PWC] Error sending command to OS. Moving on..." + RSTCLR)
+
+            # Check if the arguments contain '/?' or '/  <spaces> ?', so it is 'getting help' on a command/pgm 
+            args_help = False
+            patt = r"/ *\?"
+            if re.search(patt, arguments):
+                update_state_after_batch = False
+                args_help = True
+
+            # If the 'command' has spaces in it, then we must surround it with quotes
+            if " " in first_token_path:
+               ft_path = f'\"{first_token_path}\"'
+            else:
+               ft_path = first_token_path  
+
+            # --- IF it is a GUI program or a FOUND associated file (like XLSX or DOCX) then we MUST use 'start'
+            #     otherwise the temporary BAT file will stay blocked forever on the 'call' :(
+            if flag_GUI_pgm or flag_assoc_file:
+               execution_line =  f'start /MIN "Temp" {ft_path} {arguments}' 
+
+            elif flag_cmd_bat:
+                execution_line = f'call {ft_path} {arguments}' 
+
+            elif flag_internal_command or args_help:   # If arguments have '/?', then we can NOT use 'call', otherwise gets help for 'call'
+                execution_line = f'{cmd_clean}'  #<<--- Internal commands should NOT use call, to allow '/?' argument to work
+
+            elif flag_ps1:
+                execution_line = f'powershell.exe -ExecutionPolicy Bypass -File {ft_path} {arguments}'
+
+            elif flag_cui_pgm: # It's an EXE or COM of type CUI: they are console programs.... and can be interactive
+               # Any interactive CUI program like PYTHON.EXE falls here 
+               # They MUST be 'call'ed, otherwise the interactivity would be LOST (user could NOT interact)               
+                execution_line = f'call {ft_path} {arguments}'  
+            else:
+                print(FG_YELLOW + "Could not found a way to execute this command line:( " + RST_CLR)
                 self.update_prompt_visual()
                 return
 
 
-            # Else, use_batch==True, so the following lines are executed
-
-            # --- MAIN EXECUTION -- INTERNAL commands and *.CMD and *.BAT and *.PS1, enveloped in a temporary Batch ---
+            # --- MAIN EXECUTION block -- envelops the execution line in a temporary BAT file to be executed ---
             ERR_MARKER = "PWC_ERR_CAPTURE"
             DIR_MARKER = "PWC_DIR_CAPTURE"
             DRIVES_MARKER = "PWC_DRIVES_CAPTURE"
             CHCP_MARKER = "PWC_CHCP_CAPTURE"
             ENV_MARKER = "PWC_ENV_CAPTURE"
-            
+
             timestamp = int(time.time() * 1000)
             bat_path = os.path.join(os.environ.get('TEMP', '.'), f'pywincmd_int_{timestamp}.bat')
             out_path = os.path.join(os.environ.get('TEMP', '.'), f'pywincmd_out_{timestamp}.tmp')
+            out_path_chcp = os.path.join(os.environ.get('TEMP', '.'), f'pywincmd_chcp_{timestamp}.tmp')
 
             # Builds the commands to restore the state of each drive in the background
             drive_restorations = "\n".join([f'cd "{path}"' for path in self.drive_dirs.values()])
 
-            bat_content = f"""@echo off
-chcp {self.current_codepage} >nul
+            bat_content_part1 = f"""@echo off
+
+
+@REM This script is ALWAYS written and read with UTF-8 encoding by pywincmd.py
+@REM So, the  UTF-8 codepage MUST be active throughout the execution of this script, EXCEPT before executing the 'execution_line'; 
+@REM This is to ensure that any NON-ASCII chars present in the drives/folders path are not affected by differents CHCP  
+chcp 65001 >nul
+
+@REM restore drives and self.current_dir (THESE can have NON-ASCII characters, hence UTF-8 was previously ativacted ):
 {drive_restorations}
 cd /d "{self.current_dir}"
+
+@REM restore errorlevel from the previous execution of this BAT:
 cmd /c exit {self.last_errorlevel}
 
-{execution_line}
+@REM ONLY AT THIS POINT restore CHCP eventually set in the previous execution  - immediatelly before calling the new execution line:
+chcp {self.current_codepage} >nul
 
+@REM The variable below  has the 'execution line' just typed by the user:  {execution_line}
+@REM Note that the 'execution line' was set in % PWC_EXECUTION_LINE % env var  by pywincmd just before calling this BAT (visible in that session only)
+@rem PS - must use 'call' below, because we have to absorve env vars set when executing *.cmd or *.bat
+%PWC_EXECUTION_LINE%
+
+@REM store in env var the NEW chcp EVENTUALLY modified by the execution line above
+chcp > "{out_path_chcp}"
+set /p NEW_CHCP=<"{out_path_chcp}"
+
+            """
+
+            #Second part of the temporary BAT:     
+            bat_content_part2 = f"""
 @REM This extra echo off is necessary if the 'execution line' was cmd /k or a long BAT, when exited with Ctrl+C or 'exit'
 @echo off
+
+@REM Now restore the UTF-8 codepage again, SO the MARKERS below will be saved in the TMP output file ALWAYS with that encoding
+chcp 65001 >nul
+
 (
 echo {ERR_MARKER} %errorlevel%
 echo {DIR_MARKER}
@@ -1080,13 +1243,22 @@ for %%d in (A B C D E F G H I J K L M N O P Q R S T U V W X Y Z) do (
     )
 )
 echo {CHCP_MARKER}
-chcp
+echo %NEW_CHCP%
 echo {ENV_MARKER}
 set
 ) > "{out_path}"
-    """
-            with open(bat_path, 'w', encoding=f'cp{self.current_codepage}', errors='ignore') as f:
+            """
+
+            bat_content = bat_content_part1 + bat_content_part2  if update_state_after_batch  else  bat_content_part1 
+            with open(bat_path, 'w', encoding='utf-8', errors='ignore') as f: #  'utf-8' is mandatory here
+
                 f.write(bat_content)
+
+
+            # Now, saves the execution line as an ENV VARIABLE, as they are ENCODING AGNOSTIC  (works in any codepage) !
+            # This is required, otherwise the execution_line COULD be misinterpreted if CHCP was called in a previous execution line 
+            # and the current execution line has NON-ASCII characters (Common in latin files/folders names )
+            self.current_env["PWC_EXECUTION_LINE"] = execution_line #<-- this will be visible to the temp BAT, and well interpreted, regarding the active codepage
 
             old_environ = dict(os.environ)
             os.environ.clear()
@@ -1104,21 +1276,22 @@ set
                             cwd=self.current_dir, 
                             )
             except KeyboardInterrupt:
-                print(YELLOW + "\n[PWC] Temporary BAT process interrupted by the user. Moving on..." + RSTCLR)
+                print(FG_YELLOW + "\n[PWC] Temporary BAT process interrupted by the user. Moving on..." + RST_CLR)
 
             os.environ.clear()
             os.environ.update(old_environ)
 
             # --- ENVIRONMENT STATE SYNCHRONIZATION ---
             if not update_state_after_batch:
+                # We would do NOTHING here, but there is a little quirk that can affect the console title...
                 # Recovers the title; it could have changed if the given command was 'cmd /c' setting a new TITLE, 
-                # something unlikely to occur, but we guarantee it behaves consistently. 
+                # something unlikely to occur, but here we ensure the STATE is consistent. 
                 subprocess.run(f'cmd.exe /c "TITLE {self.title}"')
 
-            else: # state will be updated from the resulting state when the executed command/program finishes
+            else: # STATE will be updated from the existing state when the executed command/program finished
                 if os.path.exists(out_path):
                     try:
-                        with open(out_path, 'r', encoding=f'cp{self.current_codepage}', errors='ignore') as f:
+                        with open(out_path, 'r', encoding='utf-8', errors='ignore') as f:  #  'utf-8' is mandatory here
                             text_output = f.read()
                         
                         if ERR_MARKER in text_output:
@@ -1145,6 +1318,9 @@ set
 
                             cp_match = re.search(r'\d+', chcp_part)
                             if cp_match: self.current_codepage = cp_match.group()
+                            # TO-DO: Decide if we would apply the current_codepage to the REAL console of this python session
+                            #        We could do that via another subprocess.run(f'\windows\system32\chcp.com {self.current_codepage}}')
+                            #        PS - Doing that will NOT have effect on the FILE input/output, only console I/O made BY THIS PYTHON would be affected.
 
                             new_env = {}
                             clean_env_part = env_part.replace('\r', '')
@@ -1163,7 +1339,7 @@ set
                         pass
 
             # Silent cleanup
-            for p in [bat_path, out_path]:
+            for p in [bat_path, out_path, out_path_chcp]:
                 try: os.remove(p)
                 except: pass
 
@@ -1263,6 +1439,6 @@ if __name__ == '__main__':
         except EOFError:  # Ctrl+C during the python input() function call is caught here !
             sys.exit(2)
         except Exception as e:
-            print(f"{RED}Unexpected ERROR during PyWinCmd execution:")
-            print(f"{MAGENTA}{e}{RSTCLR}")
+            print(f"{FG_RED}Unexpected ERROR during PyWinCmd execution:")
+            print(f"{FG_PURPLE}{e}{RST_CLR}")
             continue
