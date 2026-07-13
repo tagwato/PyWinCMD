@@ -19,7 +19,8 @@ See the online Help for more information.
 
 # Requirements
 PyWinCMD uses the installed 'python.exe' on the target computer.  
-Alternatively, PyWinCMD can be used together with a portable version of Python.
+
+Alternatively, PyWinCMD can be used together with a portable version of Python. In this case, we recommend using [PortablePython4Windows](https://github.com/heindrickson/PortablePython4Windows) due to its versatility. Another advantage is that it comes with PyWinCMD pre-installed, ready for use with any Python version you wish to configure within that portable environment! 🚀
 <br><br>
 
 # Screenshots
@@ -58,7 +59,7 @@ It's advisable to create a new profile for PyWinCMD and configure it:
 Customizing appearance (fonts,foreground and background colors etc.) for a PyWinCMD profile:
 
 <img src="images/Appearance%20settings%20via%20Windows%20Terminal.png" alt="Customizing appearance for a PyWinCMD profile" style="border: 1px solid white; border-radius: 8px;">
-<br><br><br>
+<br><br>
 
 # License
 PyWinCMD is licensed for use, modification and distribution under the terms of Mozilla Public License version 2.0 (MPL-2.0).  
