@@ -13,8 +13,10 @@ Although there are other ways to execute commands — even when the native CMD p
 - for those who want to manually activate or deactivate different Python virtual environments and run .py programs within them.
 
 # How to use
-Download the content of this repository.  
-Run the 'PyWinCm - RUN.cmd' script.
+Download the content of this repository and extract it in any folder.  
+Run the 'PyWinCm - RUN.cmd' script and, at the 'PWC' prompt, type the commands you want.  
+<br>
+PS - Check out some examples in ['TEST_CASES.txt'](TEST_CASES.txt)  
 <br><br>
 
 # Compatibility with 'CMD.exe'
@@ -41,9 +43,9 @@ Some commands executed in PyWinCMD prompt:
 <img src="images/Some%20commands.png" alt="Some commands executed in PyWinCMD prompt" style="border: 1px solid white; border-radius: 8px;">
 <br><br>
 
-Interative commands/programs executed in PyWinCMD prompt:
+Interactive commands/programs executed in PyWinCMD prompt:
 
-<img src="images/Interative%20commands.png" alt="Interative commands/programs executed in PyWinCMD prompt" style="border: 1px solid white; border-radius: 8px;">
+<img src="images/Interactive%20commands.png" alt="Interative commands/programs executed in PyWinCMD prompt" style="border: 1px solid white; border-radius: 8px;">
 <br><br>
 
 Activating other Python virtual environments from PyWinCMD prompt:
