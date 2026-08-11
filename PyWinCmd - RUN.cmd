@@ -1,4 +1,3 @@
-
 @echo off
 setlocal enabledelayedexpansion
 @REM Use SCRIPTDIR throughout the code, instead of ~dp0, because if ~dp0 used AFTER a CD, then bad things happen 
@@ -22,4 +21,9 @@ if exist "%ICON_PATH%" (
         "$s.Save();"
 ) 
 
-cmd /c " python "%SCRIPT_DIR%\src\pywincmd.py" "
+:: Adjust below just in case this folder has '&' as part of the name -- Replace every '&' with escaped '^&'  
+:: (unfortunatelly, Windows allow the special char '&' in names, unlike others forbbiden special chars)
+:: PS - Things are pretty confusing: Windows ALSO allows the special chars '(', ')' and '=', but these do NOT require an escape!
+set "ESCAPED_DIR=%SCRIPT_DIR:&=^&%"
+
+cmd /c " python "%ESCAPED_DIR%\src\pywincmd.py" "
