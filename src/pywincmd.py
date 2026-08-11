@@ -1,3 +1,4 @@
+
 ############################################################################
 #
 # This Source Code Form is subject to the terms of the Mozilla Public
@@ -11,7 +12,14 @@
 #
 ############################################################################
 
-__version__ = "1.0.1"
+__version__ = "2.0.0"
+
+
+
+# HOW TO TEST?
+# To test this program, run PyWinCMD and type the commands listed in the 'TEST_CASES.txt' file
+
+
 
 import cmd
 import os
@@ -26,7 +34,7 @@ import subprocess
 import platform
 import ctypes
 import struct
-
+from ctypes import wintypes
 
 
 # Some ANSI colors (RGB)
@@ -81,7 +89,11 @@ class PyEmulatedCMD(cmd.Cmd):
         os_name = platform.system()
         if os_name.lower() != "windows":
             raise ValueError(f"This program only works on the Windows operating system, not on: {os_name} ")
-        
+
+        self.verbosity = False
+        self.debug = False
+        self.set_of_complex_subcommands=set(["doskey", "cd", "chdir", "pushd"])
+        self.default_state_filename = "state_pywincmd.json"
         self.current_dir = inherited_dir if inherited_dir else os.getcwd()
         self.current_env = inherited_env if inherited_env else dict(os.environ)
         self.drive_dirs = inherited_drives if inherited_drives else {}
@@ -123,93 +135,129 @@ class PyEmulatedCMD(cmd.Cmd):
  
         print("\n" + FG_BLACK + BG_CYAN + help_title + RST_CLR)
         print("PyWinCMD simulates the CMD prompt on Windows systems. " 
-              "It's useful when access to the native prompt is restricted. " 
-              "The environment state is preserved throughout the execution of commands (directories, variables, doskey macros, codepage)."
-              )
+              "It's useful when access to the native prompt is restricted. ")
+        print("The state of the environment is preserved throughout the execution of commands: directory, variables, macros, codepage.")
         print(r"""
 Navigation Keys and Shortcuts:
   [ F1 ]           : Displays this help screen
-  [ F2 or Ctrl+F2] : Saves the current environment state to a JSON file  (if CTRL+F2, opens a visual FileChooser)
-  [ F3 or Ctrl+F3] : Restores the previously saved environment state  (if CTRL+F3, opens a visual FileChooser)
+  [ F2 or Ctrl+F2] : Saves the current state of the environment to a JSON file   (CTRL+F2 opens a visual FileChooser)
+  [ F3 or Ctrl+F3] : Restores the previously saved state of the environment   (CTRL+F3 opens a visual FileChooser)
   [ F4 ]           : Shows the current state of this PyWinCmd command session
+  [ F5 ] , [F7]    : F5-Toggles the command line execution verbosity  |  F7-Toggles a pseudo-debug feature (ON/OFF)
   [ ↑ ] and [ ↓ ]  : Navigates through previously executed commands (History)
-  [ TAB ]          : Auto-completes file and folder when typing in the command line -- also during F2 and F3
+  [ TAB ]          : Auto-completes file and folder names when typing in the command line -- also during F2 and F3
                      Note: Use TAB repeatedly to cycle through autocomplete options (if more than one)
-  [ ESC ]          : Clears the entire command line being typed
-  [ Ctrl+, ]       : Opens the 'Windows Terminal' settings window, if available
-
-All 'CMD' commands can be executed. Type HELP to list them.
-Note: SETLOCAL, PUSHD, and COLOR executed in PyWinCmd prompt do NOT persist (They work normally inside a BAT/CMD).
-For help on a specific 'CMD' command, type <<command>> /? or HELP <<command>> 
-  - Examples:  COPY /?   or   help COPY
+  [ ESC ]          : Clears the entire command line that is being typed
+  [ Ctrl+,]        : Opens the 'Windows Terminal' settings window, if available
   
-To execute a script file such as BAT, CMD, or PS1, simply type its name and press ENTER.
+All 'CMD' commands can be executed. Type HELP to list them all. 
+For help on a specific command, type <<command>> /? or HELP <<command>>  -  Examples:  COPY /?   or   help COPY
+SETLOCAL/ENDLOCAL, PUSHD/POPD work only WHILE the command line is running (They work normally within a BAT/CMD).
+  
+To run a script file such as BAT, CMD, or PS1, simply type its name and press ENTER.
 It is also possible to run any program from the PyWinCmd prompt, including interactive programs like 'python'. 
 You can even activate virtual environments (virtualenv) with different Python versions and execute it. 
 
 Advanced Feature - DOSKEY:
-  PyWinCmd supports the use of DOSKEY for creating macros/aliases.
+  PyWinCmd supports the use of DOSKEY for creating macros/aliases BUT it must be the ONLY command on the cmdline
   - Example of macro creation:  DOSKEY cat=type $*   Another example: doskey catfi=type $1 $B find /I $2
   - For help on creating and managing macros:  DOSKEY /?  or  HELP DOSKEY
   """
 )
 
+    # Internal class to define the OPENFILENAMEW structure as specified by the Windows API
+    class OPENFILENAMEW(ctypes.Structure):
+        _fields_ = [
+            ("lStructSize", wintypes.DWORD),
+            ("hwndOwner", wintypes.HWND),
+            ("hInstance", wintypes.HINSTANCE),
+            ("lpstrFilter", wintypes.LPCWSTR),
+            ("lpstrCustomFilter", wintypes.LPWSTR),
+            ("nMaxCustFilter", wintypes.DWORD),
+            ("nFilterIndex", wintypes.DWORD),
+            ("lpstrFile", wintypes.LPWSTR),
+            ("nMaxFile", wintypes.DWORD),
+            ("lpstrFileTitle", wintypes.LPWSTR),
+            ("nMaxFileTitle", wintypes.DWORD),
+            ("lpstrInitialDir", wintypes.LPCWSTR),
+            ("lpstrTitle", wintypes.LPCWSTR),
+            ("Flags", wintypes.DWORD),
+            ("nFileOffset", wintypes.WORD),
+            ("nFileExtension", wintypes.WORD),
+            ("lpstrDefExt", wintypes.LPCWSTR),
+            ("lCustData", wintypes.LPARAM),
+            ("lpfnHook", ctypes.c_void_p),
+            ("lpTemplateName", wintypes.LPCWSTR),
+            ("pvReserved", ctypes.c_void_p),
+            ("dwReserved", wintypes.DWORD),
+            ("FlagsEx", wintypes.DWORD)
+        ]
 
-    def select_from_native_file_chooser(self, filtro=None, tipo="load"):
-        timestamp = int(time.time() * 1000)
-        pwc_var   = "PWC_VAR_"+ str(timestamp)
-        bat_path = os.path.join(os.environ.get('TEMP', '.'), f'pywincmd_temp_{timestamp}.bat')
-        out_path = os.path.join(os.environ.get('TEMP', '.'), f'pywincmd_{pwc_var}.tmp')
-        vnada = "###Nothing##Set##Yet###"
 
-        filtro = "Supported file types (*.txt;*.json)|*.txt;*.json|Text Files (*.txt)|*.txt|Jason Documents (*.json)|*.json"
-
-        if tipo.lower()=="save":
-            mensagem = "Set the file name to save in the opened file selection dialog/window..."
-            ps_cmd = f"Add-Type -AssemblyName System.Windows.Forms; $f = New-Object System.Windows.Forms.SaveFileDialog; $f.InitialDirectory = $PWD.Path; $f.Title = 'Save environment state'; $f.Filter = '{filtro}'; if($f.ShowDialog() -eq 'OK') {{$f.FileName }}"
-        else:          # 'load'
-            mensagem = "Select a file to load in the opened file selection dialog/window..."
-            ps_cmd = f"Add-Type -AssemblyName System.Windows.Forms; $f = New-Object System.Windows.Forms.OpenFileDialog; $f.InitialDirectory = $PWD.Path; $f.Title = 'Load saved state'; $f.Filter = '{filtro}'; if($f.ShowDialog() -eq 'OK') {{$f.FileName }}"
-
-        bat_content = f"""@echo off
-cd /d "{self.current_dir}"        
-:: Prepares the command
-set "PS_CMD={ps_cmd}"
-:: Executes PowerShell, which shows the File-Chooser, then captures the result into the variable {pwc_var}
-for /f "usebackq delims=" %%I in (`powershell -STA -NoProfile -Command "%PS_CMD%"`) do (
-    set "{pwc_var}=%%I"
-)
-if defined {pwc_var} (
-    echo %{pwc_var}% > {out_path}
-) else (
-    echo  {vnada} > {out_path}
-)
-"""
-
-        with open(bat_path, 'w', encoding=f'cp{self.current_codepage}', errors='ignore') as f:
-            f.write(bat_content)
-
-        print(mensagem)
-
-        try:
-            subprocess.run(f'cmd.exe /c "{bat_path}"', cwd=self.current_dir) 
-        except KeyboardInterrupt:  # IF Ctrl+C is pressed during batch execution
-            print(FG_YELLOW + "\n[PWC] BAT process interrupted by the user. Moving on..." + RST_CLR)
-            return None
-
-        # Now we read the file where the BAT wrote the chosen file name
-        selected = None
-        if os.path.exists(out_path):
-            try:
-                with open(out_path, 'r', encoding=f'cp{self.current_codepage}', errors='ignore') as f:
-                    selected = f.read().strip()
-                if selected == vnada:  # if the user clicked the "Cancel" button in the FileChooser, it will read vnada
-                    selected = None 
-            except:
-                pass   # selected remains None
+    def select_from_native_file_chooser(self, dialog_type="open", title=None, initial_dir=None, initial_file=None, filter_string="All Files\0*.*\0\0", default_ext=None):
+        """
+        Opens a Windows native File-Chooser dialog for opening or saving files.
         
-        return selected
+        :param dialog_type: "open" or "save"
+        :param title: The title of the dialog window.
+        :param initial_dir: The starting directory (defaults to the current working directory).
+        :param initial_file: Default file name to pre-fill in the input text field.
+        :param filter_string: A null-separated string defining the file filters (must end in \0\0).
+        :param default_ext: The default extension to append if the user doesn't type one (e.g., "txt").
+        :return: The selected file path as a string, or None if the user canceled.
+        """
+        is_save = dialog_type.lower() == "save"
+        
+        # Initialize the OPENFILENAMEW structure
+        ofn = self.OPENFILENAMEW()
+        ofn.lStructSize = ctypes.sizeof(self.OPENFILENAMEW)
+        ofn.lpstrTitle = title if title else ("Save File" if is_save else "Open File")
+        
+        if initial_dir:
+            ofn.lpstrInitialDir = initial_dir
 
+        # We must keep references to these buffers so they aren't garbage collected during the API call
+        filter_buffer = ctypes.create_unicode_buffer(filter_string)
+        ofn.lpstrFilter = ctypes.cast(filter_buffer, wintypes.LPCWSTR)
+
+        if default_ext:
+            def_ext_buffer = ctypes.create_unicode_buffer(default_ext)
+            ofn.lpstrDefExt = ctypes.cast(def_ext_buffer, wintypes.LPCWSTR)
+
+        # Allocate a buffer to hold the returned file path
+        buffer_size = 32768  #<<--- Supports Windows extended path size, this big
+
+        if initial_file:
+            file_buffer = ctypes.create_unicode_buffer(initial_file, buffer_size)
+        else:
+            file_buffer = ctypes.create_unicode_buffer(buffer_size)
+            file_buffer[0] = '\0'
+
+        ofn.lpstrFile = ctypes.cast(file_buffer, wintypes.LPWSTR)
+        ofn.nMaxFile = buffer_size
+
+        # Define flags
+        OFN_EXPLORER = 0x00080000      # Use the newer Explorer-style dialog
+        OFN_PATHMUSTEXIST = 0x00000800 # Prevent user from typing a path that doesn't exist
+        OFN_FILEMUSTEXIST = 0x00001000 # (Open) Prevent user from typing a file that doesn't exist
+        OFN_OVERWRITEPROMPT = 0x00000002 # (Save) Warn if selecting an existing file
+        
+        if is_save:
+            ofn.Flags = OFN_EXPLORER | OFN_PATHMUSTEXIST | OFN_OVERWRITEPROMPT
+        else:
+            ofn.Flags = OFN_EXPLORER | OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST
+
+        # Call the appropriate function from comdlg32.dll
+        comdlg32 = ctypes.windll.comdlg32
+        if is_save:
+            success = comdlg32.GetSaveFileNameW(ctypes.byref(ofn))
+        else:
+            success = comdlg32.GetOpenFileNameW(ctypes.byref(ofn))
+            
+        if success:
+            return file_buffer.value
+        
+        return None
 
 
     def get_user_input_from_native_CMD(self, prompt_str):
@@ -231,13 +279,18 @@ if defined {pwc_var} (
     def save_state_f2(self,  filepath=None, file_chooser=False):
         print("\n--- SAVE ENVIRONMENT STATE ---")
         if not filepath:
-            if file_chooser:  # We will use the native Dialog to get the filepath
-                filepath = self.select_from_native_file_chooser(tipo='save')
+            if file_chooser:  # Let's use the native Dialog to get the filepath
+                filepath = self.select_from_native_file_chooser(dialog_type='save', 
+                                                                title="Save the current state to a file",
+                                                                initial_dir=self.current_dir,
+                                                                initial_file=self.default_state_filename,
+                                                                filter_string="Supported Files (*.json;*.txt)\0*.json;*.txt\0\0",
+                                                                default_ext='json')                
                 if not filepath:  #<-- If selection was canceled inside the FileChooser
                     print(FG_YELLOW + "Operation canceled!" + RST_CLR)
                     return False
-            else:             # We will use the command line to get the filepath
-                prompt_str = "File to save [D = default 'state_pywincmd.json', start of name+TAB = autocomplete, ESC clears, C = cancel]:"
+            else:  # Let's use the command line to get the filepath
+                prompt_str = f"File to save [D = default '{self.default_state_filename}', start of name+TAB = autocomplete, ESC clears, C = cancel]:"
                 while filepath is None:  # if empty ENTER or Ctrl+C was pressed while executing SET /p
                     filepath = self.get_user_input_from_native_CMD(prompt_str)
 
@@ -245,13 +298,16 @@ if defined {pwc_var} (
                     print(FG_YELLOW + "Operation canceled by user" + RST_CLR)
                     return False
                 elif  filepath.strip().upper() == "D":  #  D = Default state filename 
-                    filepath = "state_pywincmd.json"
+                    filepath = self.default_state_filename
             
                 filepath = filepath.strip()
                 if not os.path.isabs(filepath):
+                    # Strip off leading and trailer quotes, if present
+                    if len(filepath) >= 2 and filepath[0] == '\"' and filepath[0] == filepath[-1]:
+                        filepath = filepath[1:-1]
                     filepath = os.path.join(self.current_dir, filepath)
 
-                if os.path.exists(filepath):  # Only needs to test this if on the command line; FileChooser already checks this
+                if os.path.exists(filepath):  # Only needs to test this when using the command line; FileChooser already checks this
                     resp = None
                     try:
                         resp = input(f"The file {filepath} already exists, do you want to overwrite it? (Y/N): ")
@@ -285,13 +341,16 @@ if defined {pwc_var} (
     def load_state_f3(self, file_chooser=False):
         print("\n--- LOAD ENVIRONMENT STATE ---")
 
-        if file_chooser:  # We will use the native Dialog to get the filepath
-            filepath = self.select_from_native_file_chooser(tipo='load')
+        if file_chooser:  # Let's use the native Dialog to get the filepath
+            filepath = self.select_from_native_file_chooser(dialog_type='open', 
+                                                            initial_dir=self.current_dir,
+                                                            title="Load state from a file",
+                                                            filter_string="Supported Files (*.json;*.txt)\0*.json;*.txt\0\0")
             if not filepath:  #<-- If selection was canceled inside the FileChooser
                 print(FG_YELLOW + "Operation canceled!" + RST_CLR)
                 return False
-        else:             # We will use the command line to get the filepath
-            prompt_str = "File to load [D = default 'state_pywincmd.json', start of name+TAB = autocomplete, ESC clears, C = cancel]:"
+        else:  # Let's use the command line to get the filepath
+            prompt_str = f"File to load [D = default '{self.default_state_filename}', start of name+TAB = autocomplete, ESC clears, C = cancel]:"
             filepath = None
             while filepath is None:  # if empty ENTER or Ctrl+C was pressed while executing SET /p
                 filepath = self.get_user_input_from_native_CMD(prompt_str)
@@ -300,10 +359,13 @@ if defined {pwc_var} (
                 print(FG_YELLOW + "Operation canceled by user" + RST_CLR)
                 return False
             elif  filepath.strip().upper() == "D":  #  D = Default state filename 
-                filepath = "state_pywincmd.json"
+                filepath = self.default_state_filename
 
             filepath = filepath.strip()            
             if not os.path.isabs(filepath):
+                # Strip off leading and trailer quotes, if present
+                if len(filepath) >= 2 and filepath[0] == '\"' and filepath[0] == filepath[-1]:
+                    filepath = filepath[1:-1]
                 filepath = os.path.join(self.current_dir, filepath)
                 
             if not os.path.exists(filepath):
@@ -639,9 +701,20 @@ if defined {pwc_var} (
                     print()
                     self.show_state_f4()
                     force_fresh = True
+                elif sub_ch == "?": # F5 (Scancode 63)
+                    self.verbosity = not self.verbosity  # Just switch OFF/ON/OFF/ON...
+                    status = FG_GREEN + "-- ON --" if self.verbosity else FG_RED + "-- OFF --"
+                    print()
+                    print("Command line execution verbosity is now: " + status + RST_CLR )
+                    force_fresh = True
+                elif sub_ch == "A": # F7 (Scancode 65)
+                    self.debug = not self.debug  # Just switch OFF/ON/OFF/ON...
+                    status = FG_GREEN + "-- ON --" if self.debug else FG_RED + "-- OFF --"
+                    print()
+                    print("Pseudo-debug mode is now: " + status + RST_CLR  + " (this mode allows inspection of the temporary BAT scripts)")
+                    force_fresh = True
                 elif sub_ch == "_": # Ctrl+F2 (Scancode 95)
                     print()
-                    print ("Ctrl + F2 was pressed")
                     self.save_state_f2(file_chooser=True)  # In this case, we will use the native GUI FileChooser
                     force_fresh = True
                 elif sub_ch == "`": # Ctrl+F3 (Scancode 96)
@@ -702,6 +775,7 @@ if defined {pwc_var} (
 
             draw_line(old_cursor_pos, buffer, cursor_pos, force_fresh)
 
+
     def _path_completer(self, text, only_dirs=False):
         text = text.strip('"')
         try:
@@ -716,6 +790,11 @@ if defined {pwc_var} (
                 partial = os.path.basename(text)
 
             matches = []
+            
+            # SET com todos os caracteres que forçam o uso de aspas no CMD nativo para foldernames/filenames
+#            cmd_special_chars = {' ', '+', '[', ']', '{', '}', '(', ')', '%', '!', '&', '|', '>', '<', '^', "'", "`", "´"}
+            symbols_require_quotes_in_file_names = {' ', '&', '^' }
+            
             for item in os.listdir(base_dir):
                 full_path = os.path.join(base_dir, item)
                 
@@ -728,7 +807,8 @@ if defined {pwc_var} (
                 prefix = os.path.dirname(text)
                 candidate = os.path.join(prefix, item) if prefix else item
                 
-                if " " in candidate:
+                # NOVO: Verifica se o caminho construído possui algum dos caracteres especiais
+                if any(char in candidate for char in symbols_require_quotes_in_file_names):
                     candidate = f'"{candidate}"'
                     
                 matches.append(candidate)
@@ -736,6 +816,7 @@ if defined {pwc_var} (
             return sorted(matches)
         except Exception:
             return []
+
 
     # Function to check if the EXE/COM is GUI or CUI/console type
     def get_exe_subsystem(self, exe_path):
@@ -779,35 +860,476 @@ if defined {pwc_var} (
         except Exception:
             return None
 
+
+    def split_typed_cmdline(self, cmdline):
+        """
+        Split a Windows CMD command line into SUBcommands, preserving the
+        execution operators ('&', '&&', '|', '||') that MAY precede each command.
+        SUBcomands are EACH part that are concatenated by the operators above.
+
+        Returns:
+            A tuple (commands, parens_balanced, quotes_balanced) where:
+            - commands (list): A list of dictionaries containing:
+                - 'operator' (str | None): The operator before the command
+                - 'command' (str): The primary command/executable
+                - 'args' (str): The remaining arguments as a single string
+                - 'original text' (str): Full original text of the subcommand with arguments
+                PS - Leading and trailing whitespace are trimmed from these three values as a result of the processing.
+        """
+        commands = []
+        current = []
+        in_quotes = False
+        i = 0
+        length = len(cmdline)
+        
+        current_op = ""
+        paren_count = 0
+        parens_balanced = True
+        
+        # Track where each subcommand block starts
+        block_start = 0
+
+        def _add_subcommand(subcommand_with_args, op, b_start, b_end):
+            # 1. Get the raw, unmodified text directly from the original string
+            raw_slice = cmdline[b_start:b_end]
+            original_text = raw_slice.strip()
+            
+            # 2. Find the exact start index of the non-whitespace text
+            start_idx = b_start
+            if original_text:
+                start_idx += raw_slice.find(original_text)
+
+            subcommand_with_args = subcommand_with_args.strip()
+            
+            if not subcommand_with_args:
+                if op:
+                    commands.append({
+                        "operator": op, "command": "", "args": "",
+                        "start_index": start_idx, "original_text": original_text
+                    })
+                return
+
+            # Detect '@<<command>>' and temporarily removes the '@'  -- Also accept '@ <<command>>'; This is how native CMD prompt behaves
+            if subcommand_with_args.startswith('@'):
+                subcommand_with_args = subcommand_with_args[1:].lstrip()
+                if not subcommand_with_args:
+                    if op:
+                        commands.append({
+                            "operator": op, "command": "@", "args": "",
+                            "start_index": start_idx, "original_text": original_text
+                        })
+                    return
+
+            match = re.match(r'^((?:"[^"]*"|\S)+)\s*(.*)', subcommand_with_args)
+            if not match:
+                return
+                
+            cmd_name = match.group(1)
+            args_str = match.group(2)
+            
+            idx = -1
+            in_q = False
+            for j, char in enumerate(cmd_name):
+                if char == '"':
+                    in_q = not in_q
+                elif not in_q and char in ('/', '<', '>'):
+                    idx = j
+                    break
+                    
+            if idx > 0:
+                glued_part = cmd_name[idx:]
+                cmd_name = cmd_name[:idx]
+                args_str = f"{glued_part} {args_str}" if args_str else glued_part
+
+            commands.append({
+                "operator": op,
+                "command": cmd_name.lower(),      # Let's lower it HERE to facilitate comparisons later
+                "args": args_str,
+                "start_index": start_idx, 
+                "original_text": original_text 
+            })
+        #End_of_add_subcomand
+
+        while i < length:
+            c = cmdline[i]
+
+            if c == '^' and not in_quotes:
+                current.append(c)
+                if i + 1 < length:
+                    i += 1
+                    current.append(cmdline[i])
+                i += 1
+                continue
+
+            if c == '"':
+                in_quotes = not in_quotes
+                current.append(c)
+                i += 1
+                continue
+
+            if in_quotes and c in ( '<', '>', '&', '|' ):
+                # If the user command-line has these symbols INSIDE quotes, we MUST escape them, because the temporary 
+                # BAT file uses CALL /C "execution_line" which means there will be one parsing at the parent CMD and 
+                # other parsing at the child CMD /C. The escape allow the symbol to 'survive' those two passes.
+                # This will correctly interpret command lines like this:
+                #         findstr /C:"||" file.cmd
+                #   and   echo "bla > ble"    and    echo "Hi^&d"
+                # PS-When one of these symbols is  NOT inside a string and the user wants it to behave like a literal, 
+                #    then THE USER is responsible  for typing  the escape caret IF that is what he wants ! 
+                c = '^' + c  
+
+            if not in_quotes and c in ('<', '>'):
+                current.append(c)
+                if i + 1 < length and cmdline[i + 1] == '>':
+                    i += 1
+                    current.append('>')
+                if i + 1 < length and cmdline[i + 1] == '&':
+                    i += 1
+                    current.append('&')
+                i += 1
+                continue
+
+            if not in_quotes and c in ('&', '|'):
+                found_op = c
+                op_len = 1
+                if i + 1 < length and cmdline[i + 1] == c:
+                    found_op = c + c
+                    op_len = 2
+
+                text = "".join(current).strip()
+                _add_subcommand(text, current_op, block_start, i)
+                
+                current_op = found_op
+                current = []
+                
+                i += op_len
+                block_start = i  # Mark the start of the next block
+                continue
+
+            if not in_quotes and c in ('(', ')'):
+                if c == '(':
+                    paren_count += 1
+                else:
+                    paren_count -= 1
+                    if paren_count < 0:
+                        parens_balanced = False
+
+                current.append(c)
+                i += 1
+                continue
+
+            current.append(c)
+            i += 1
+        #End-while
+
+        text = "".join(current).strip()
+        _add_subcommand(text, current_op, block_start, length)
+
+        if paren_count != 0:
+            parens_balanced = False
+
+        quotes_balanced = not in_quotes
+
+        return commands, parens_balanced, quotes_balanced
+
+    #End-of split_typed_cmdline()
+
+
+    def _adjust_subcommand(self, subcommand):
+            '''
+            Adjust according to the type of each (sub)command.
+            The complete path will be searchd For external programs or associated files, and this path
+            will be used, instead of the single text.
+            A 'call' will be prepended to BAT and CMD scripts, to ensure they do NOT hang/freeze the temporary BAT;
+            Also for CUI programs, like 'python.exe', otherwise their interactivity is lost.
+            And for GUI programs, a 'start' is prepended, to ensure they do NOT hang/freeze the temporary BAT.
+            '''
+
+            # Can happens if these symbols are mispplaced at the end of the line (detected as a last 'subcomand')
+            if subcommand in "['&', '|', '&&', '||', '>', '>>', '<', '<<' ]":
+                return subcommand
+            
+            flag_assoc_file= False
+            flag_GUI_pgm= False
+            flag_cui_pgm= False
+            flag_ps1=False
+            flag_cmd_bat=False
+            flag_internal_command= False
+            subcmd = None
+            subcmd_path = None
+
+            # -- LET's see if the received user 'command' is an  absolut or relative 'path' , and use shutil.which() on it:
+            subcmd = subcommand.strip() # It was already lower() when inserted in the list
+            subcmd_was_quoted = False
+            #    Must REMOVE from the subcommand the eventual pair of trailing/leading quotes 
+            #    because shutil.which() and os.path.exists() do NOT like them (can NOT find quoted stuff in the path)
+            if len(subcmd) >= 2 and subcmd[0] in "'\"" and subcmd[0] == subcmd[-1]:
+                subcmd = subcmd[1:-1]
+                subcmd_was_quoted = True
+                # The line below is to REVERT escapes eventually inserted in OTHER parts of the subcommand 
+                # by _split_typed_cmdline(), because the shutils which() and path.exists() used below will NOT find 
+                # in the PATH  foldernames/filenames escaped with '^'  
+                # PS - do NOT remove insertion of '^' in that function, because they must be inserted in the args part, which is fine
+                subcmd = subcmd.replace('^&', '&')  #<--  This reversion is TEMPORARY only, restored a few lines ahead
+                subcmd = subcmd.replace("%cd%", self.current_dir) 
+            else:  # subcommand was not inside quotes
+                subcmd = subcmd.replace("%cd%", self.current_dir) 
+
+            #--------------------------------------------------------------------------#
+            #         IMPORTANT - About the search for the 'command' FULL path (part 1)                #
+            #--------------------------------------------------------------------------#
+            # In the following lines,  We try to get the 'command'/program/script FULL path.
+            # WHY? (we could just NOT check at all and the call CMD/C used in the temp BAT would do this search). 
+            # The problem is: if the program is an executable EXE that has Windows GUI, and we just 'call' it
+            # from our temporary BAT file, then our PyWinCMD prompt will be blocked until the called GUI
+            # program is finished (this happens with MS-Excel, MS-Word, Notepad etc.). That would NOT be  good !
+            # So, we try to find ourselves the 'command' FULL path, to be able to check wether it's a GUI type. 
+            # If it is, the program will be called using 'start' in the temp BAT, ensuring the call will NOT block. 
+            #--------------------------------------------------------------------------#
+
+            # Search directly for the 'command' folder/file , if an ABSOLUTE path was received
+            if ( subcmd.startswith('\\') or  # <--- An absolute PATH was given, starting with '\'
+                 (len(subcmd) > 2 and subcmd[1:3] == ':\\') ) : # <--- An absolute PATH was given, starting with Drive letter) 
+                if os.path.exists(subcmd):
+                    subcmd_path = subcmd
+
+            # NOW, if not found yet, LET's search for the 'command' in the directories that are in the PATH variable 
+            # (only extensions in PATHEXT are looked for,  to see what they are, call 'set PATH' in the command line )
+            if not subcmd_path: #<<--- We received  either a  short name or a relative path in the 'command'
+                curr_path=self.current_env.get('PATH', os.environ['PATH'])
+                curr_path=self.current_dir + ";" + curr_path  #<<--- which() does NOT search in the current dir when the 'path' parameter is used, so we add it, to build a CMD-like behavior
+                # the which() function returns ONLY one path, whichever has precedence in the PATH
+                subcmd_path = shutil.which(subcmd, path=curr_path)
+            #End-if
+
+            # Not found yet? MAYBE the 'command' is just an 'associated' file name, with extensions like *.xlsx, *.docx, etc 
+            # (such extensions are NOT in PATHEXT, so the previous search via shutil.which() would NOT have found them)
+            if not subcmd_path:
+                if os.path.exists(self.current_dir + os.sep + subcmd):  
+                    subcmd_path = self.current_dir + os.sep + subcmd
+
+            # If we definetely could NOT find the FULL path, then we consider it an INTERNAL COMMAND (e.g., DIR, ECHO, SET), 
+            if not subcmd_path:
+                flag_internal_command = True
+                subcmd_path = subcmd
+
+            #--------------------------------------------------------------------------#
+            #         IMPORTANT - About the search for the 'command' FULL path (part 2)                #
+            #--------------------------------------------------------------------------#
+            #The search we did in the steps above works perfectly... EXCEPT in cases where the current 'command' is part 
+            #  of a sequence of CONCATENATED commands and one of the previous commands executes 'CD', meaning it changes 
+            #  the current directory DURING the execution of our temporary BAT file :( 
+            # In this case, the search we did above in self.current_dir isn’t effective, because it looks in a directory 
+            #  that is NO longer what we have in self.current_dir  (we can only update it at the END of the execution of 
+            # CMD /C in the  temporary BAT,  not for each CONCATENATED subcommand). 
+            # Q - What is the effect of this? 
+            # A – In such cases, we will NOT be able to detect if a 'command' refers to a GUI program and it will be 
+            # considered an INTERNAL command, meaning it will be called in the BAT without using 'start', which will 
+            # cause our prompt to get 'stuck' until that GUI program is closed :( 
+            # Besides, the 'freezing' may last for a while AFTER the GUI program ends, EVEN if we hit Ctrl+Break :(
+            #--------
+            # SO, to reduce impacts, we will always WARN the user whenever 'CD' is part of concatenated commands, and he 
+            # can decide whether he wants to run the concatenated command line anyway, or run the 'CD' in a separate command line.
+            #--------------------------------------------------------------------------#
+
+            # At this point, any 'resolvable' extension would have been set in subcmd_path, just like the native CMD would do  
+            else: # <-- The FULL path of the command/pgm/script/filename etc was found '
+
+                p_lower = subcmd_path.lower()
+
+                # MUST test every case:
+                if p_lower.endswith('.ps1'):
+                    flag_ps1 = True
+                elif  p_lower.endswith( ('.bat', '.cmd',) ):
+                    flag_cmd_bat = True
+                elif  p_lower.endswith( ('.exe', '.com',) ):
+                    IMAGE_SUBSYSTEM_WINDOWS_GUI = 2
+                    IMAGE_SUBSYSTEM_WINDOWS_CUI = 3
+                    if self.get_exe_subsystem(subcmd_path) == IMAGE_SUBSYSTEM_WINDOWS_GUI:  # GUI type / separate apps
+                        # Note that GUI programs, like NOTEPAD, or EXCEL.EXE fall here
+                        flag_GUI_pgm = True
+                    else:  # It's an EXE/COM of type CUI: console program.... and it could be interactive
+                        # Also interactive CUI programs like PYTHON.EXE fall here
+                        flag_cui_pgm = True
+                else: 
+                    # If file EXISTS,  but has NON EXECUTABLE extensions, like *.DOCX, *.VBS, *.XLSX etc, then it may be associated with some PGM
+                    flag_assoc_file = True 
+
+            # If the 'command' has spaces in it, then we must surround it with quotes, otherwise it will fail in the temp BAT.
+            # This can happen if the 'command' was expanded with the complete path (external programs or assoc-files) 
+            # by the previous call to 'which' OR if the original command typed by the user was quoted path containing spaces
+            subcmd_quotes_applyed = False
+            # Note that there might be ANOTHER situation where we need to use quotes: when the 
+            #  original subcommand was received in quotes EVEN without spaces -- This happens 
+            #  when it's a file name with special characters, like '&', '(' and others.
+            if " " in subcmd_path or subcmd_was_quoted: #<<-- The presence of quotation marks matters, regardless of whether there were spaces or not
+               subcmd_quotes_applyed = True
+               subcmd_path = f'\"{subcmd_path}\"'
+
+            # Final adjustment of the subcommand path:
+            if subcmd_quotes_applyed:
+               subcmd_path = subcmd_path.replace('&', '^&') # Put a cmd escape code before '&', if found
+
+            # --- IF it is a GUI program or a FOUND associated file (like XLSX or DOCX) then we MUST prepend a 'start'
+            #     command otherwise the temporary BAT file will stay blocked waiting forever :(
+            if flag_GUI_pgm or flag_assoc_file:
+                adjusted_subcommand =  f'start "Temp" {subcmd_path} '  
+
+            elif flag_cmd_bat:
+                adjusted_subcommand = f'call {subcmd_path} ' 
+
+            elif flag_ps1:
+                adjusted_subcommand = f'powershell.exe -ExecutionPolicy Bypass -File {subcmd_path} ' 
+
+            elif flag_cui_pgm: # It's an EXE or COM of type CUI: they are console programs.... and can be interactive
+               # Any interactive CUI program like PYTHON.EXE falls here 
+                adjusted_subcommand = f'{subcmd_path} '   #  'call' is not required
+#                adjusted_subcommand = f'call {subcmd_path} '  
+
+            else:  # flag_internal_command = True  will be handled here
+                # Do NOT prepend 'call' here. 
+                # Without 'call', command lines that use '(' ')' to separate commands will WORK fine !
+                # Otherwise, blocks of commands using parentheses may raise errors. 
+                adjusted_subcommand =  subcommand
+
+            return adjusted_subcommand
+
+
     # =========================================================================
     # --- UNIFIED EXECUTION ENGINE ---
     # =========================================================================
-    def _execute_cmd(self, user_command):
-            cmd_clean = user_command.strip()
-            if not cmd_clean:
+    def _execute_cmd(self, user_cmdline):
+
+        def looking_for_help(text: str) -> bool:
+            """
+            Auxiliary function to Check if the argument contains '/?' ignoring any whitespaces/tabs
+            eventually existent before, between, or after these characters ('  /  ?' and '  /C  / ?' both return True )
+            """
+            pattern = r"/\s*\?"
+            return bool(re.search(pattern, text))
+        #End_def
+
+        def doskey_macro_expansion(old_text: str) -> str:
+            new_text = old_text
+            parts = new_text.split(maxsplit=1)
+            flag_found = False
+            if parts:
+                first_word = parts[0].lower() # Always lower the key in doskey dictionary
+                if first_word in self.macros:
+                    flag_found = True
+                    macro_val = self.macros[first_word]
+                    rest_of_args = parts[1] if len(parts) > 1 else ""
+                    
+                    # Native DOSKEY special characters substitutions
+                    # We use (?i) in regex to be case-insensitive (e.g., accept $t or $T)
+                    macro_val = re.sub(r'(?i)\$T', '&', macro_val)
+                    macro_val = re.sub(r'(?i)\$G', '>', macro_val)
+                    macro_val = re.sub(r'(?i)\$L', '<', macro_val)
+                    macro_val = re.sub(r'(?i)\$B', '|', macro_val)
+
+                    # Checks if there is any numerical argument marker ($1 to $9) or $*
+                    has_args_marker = bool(re.search(r'\$(\*|[1-9])', macro_val))
+
+                    if has_args_marker:
+                        # Extracts the macro arguments keeping quoted blocks together
+                        # Ex: 'arg1 "arg 2" arg3' becomes a list: ['arg1', '"arg 2"', 'arg3']
+                        margs = re.findall(r'".*?"|\S+', rest_of_args)
+                        
+                        new_text = macro_val
+                        
+                        # Replaces $1 to $9
+                        for i in range(1, 10):
+                            arg_val = margs[i-1] if i <= len(margs) else ""
+                            new_text = new_text.replace(f"${i}", arg_val)
+                        
+                        # Replaces $* with the entire rest of the original line
+                        new_text = new_text.replace("$*", rest_of_args)
+                    else:
+                        # CMD default behavior: if there are no variables, 
+                        # the typed arguments are just concatenated at the end
+                        new_text = macro_val + (" " + rest_of_args if rest_of_args else "")
+
+                    # Finally, replaces $$ with a literal $ (in case the user escaped it)
+                    new_text = new_text.replace("$$", "$")
+                
+            return flag_found, new_text.strip()
+        #End-def
+
+        cmdline_clean = user_cmdline.strip()
+        if not cmdline_clean:
+            return False  # Nothing to do; user has just hit ENTER?  PS --> True would EXIT our emulator, it is the return of shell.onecmd()
+
+        subcommands, parens_balanced, quotes_balanced = self.split_typed_cmdline(user_cmdline)
+
+        # Must NOT allow this, because we use CMD /C to run, and it MAY change the command line behavior when 
+        #  quotes are  unmatched (results could be different than running the command line in the native CMD prompt).
+        # Side effects of not allowing: almost zero, because the native CMD prompt would also throws error messages
+        #  in almots all such cases. It only allows weird ECHO subcommands with unbalanced quotes.
+        if not quotes_balanced: 
+            print(FG_RED + "ERROR: Unbalanced quotes in the command line" + RST_CLR) 
+            print("Canceled! Please correct the input and try again."); return False
+
+        if not parens_balanced:   # <--User decides, because Folder/File ENAMES are ALLOWED to have unbalanced "(" and ")" in the name, as well as echo 
+            print(FG_YELLOW + "WARNING: Unbalanced parentheses in the command line" + RST_CLR) 
+            print ("  IF it occurs in foldernames/filenames or in echo arguments, you can proceed.")
+            try:
+                resp = input("  Proceed executing the command line (Y/N)? " )
+            except:
+                resp = 'N'
+            if resp.upper().startswith('Y'):
+                print("  Trying to execute... if no result displayed, indicates unbalance was fatal/nothing executed")
+            else: 
+                print("  Canceled!"); return False
+
+        if len(subcommands) > 1: # The command line has concatenated subcommands 
+
+            complex_subcommands_found = [c['command'] for c in subcommands if c.get("command") in self.set_of_complex_subcommands]
+            # PS -unlike those in the above set, the 'EXIT' subcommand is ALLOWED to run concatenated, it is not checked here 
+
+            # Noe that the 'text of the 'command' stored is already in lower case
+            if 'doskey' in complex_subcommands_found:
+                print(FG_RED + f"ERROR - Can NOT run 'doskey' concatenated with other commands" + RST_CLR)
+                print("Canceled! - Please try again, using 'doskey' in its own command line")
                 return False
 
-            cmd_lower = cmd_clean.lower()
+            if 'cd' in complex_subcommands_found or 'pushd' in complex_subcommands_found or 'chdir' in complex_subcommands_found:
+                print(FG_YELLOW + "WARNING: There is a 'CD' or 'PUSHD' subcommand in the concatenated command line" + RST_CLR) 
+                print ("  If any concatenated subcommand that follows 'CD'/'PUSHD' executes a GUI program, this prompt will 'freeze'")
+                print ("  In such cases, it is HIGHTLY advisable to execute 'CD'/'PUSHD' in its own cmdline.")
+                try:
+                    resp = input("  Proceed executing the command line (Y/N)? ")
+                except:
+                    resp = 'N'
+                if resp.upper().startswith('Y'):
+                    print("  Executing... if the prompt 'freezes' after you close the GUI program, hit Ctrl+Break and WAIT a few seconds")
+                else: 
+                    print("  Canceled!"); return False
+
+        # Intercept some commands, like DOSKEY and EXIT
+        #  but ONLY if they are the ONLY command in the command line (no other commands concatenated)
+        if len(subcommands) == 1:
+
+            cmd_lower = subcommands[0]['command'].lower()
+            args = subcommands[0]['args']
+            args_lower = args.lower()
 
             # --- DOSKEY INTERCEPTION AND DEFINITION ---
-            if cmd_lower.startswith("doskey ") or cmd_lower.startswith("doskey/"):  # DoskeyBLABLA could be a file or pgm name, hence check for SPACE or /
-                args = cmd_clean[6:].strip()
-                args_lower = args.lower()
-                
-                if args == "/?":
+            if cmd_lower == "doskey":
+               
+                if looking_for_help(args):
                     print(r"""
 This command allows you to create, edit, export, and import macros, as well as list the command history.
 DOSKEY [/MACROS] [/MACROFILE=file] [macro_name=[text]]
     macro_name:    Specifies the name of the macro to be created or edited
     text      :    Specifies the command(s) you want to associate with the macro
     /MACROS   :    Displays all macros
-    /MACROFILE=file: Imports previously exported macros to the file (to export, see examples below)
+    /MACROFILE=file: Imports macros previously exported to the file (to export, see examples below)
     /HISTORY  :    Lists the entire command history (navigate with Up/Dw and PgUp/PgDw arrows)
     /REINSTALL:    Clears/Resets all macros and ALSO the entire command history.
 
-The following special coding can be used in Doskey macro definitions.
-They will be replaced by symbols or texts, according to the table below:
-    Code            Description
+The following special characters can be used in Doskey macro definitions.
+They will be replaced by other symbols or texts, according to the table below:
+    Special code    Description
     $G or $g        Will be replaced by the output redirector ('>').
     $G$G or $g$g    Will be replaced by the append mode output redirector ('>>')
     $L or $l        Will be replaced by the input redirector ('<').
@@ -815,27 +1337,29 @@ They will be replaced by symbols or texts, according to the table below:
     $T or $t        Will be replaced by the command concatenation symbol ('&').
     $$              Escape code for the '$' character, in case it needs to appear within the macro ('$').
     $1 to $9        Will be replaced by each parameter typed at runtime. $1 is equivalent to %1, etc.
-    $* Will be replaced by all text following the macro name at runtime.
+    $* Will be replaced at runtime by all text following the macro name.
 
-Example that simulates the '&&' symbol (execute second concatenated command only if the first succeeds):
+Example that simulates the '&&' operator (execute second concatenated command only if the first succeeds):
     DOSKEY compile=build.bat $T IF NOT ERRORLEVEL 1 deploy.bat 
-Example that simulates the '||' symbol (execute second concatenated command only if the first fails):
+Example that simulates the '||' operator (execute second concatenated command only if the first fails):
     DOSKEY test=test.bat $T IF ERRORLEVEL 1 echo Failed! $T something_else.bat
 Other Examples:
 ______ Macro definition ____________________________ Typed ___________________ Executed _____________________________
-▌   DOSKEY ls=dir $*                            ▌ ls \users\john    ====>>  dir \users\john                         ▐
-▌   DOSKEY cdw=cd $1 $T dir/w $1                ▌ cdw \temp *.bat   ====>>  cd \temp & dir /w *.bat                 ▐
-▌   DOSKEY mcd=md $1 $T cd $1                   ▌ mcd logs          ====>>  md logs & cd logs                       ▐
-▌   DOSKEY dirfi=dir $1 /b $B findstr /I "$2"   ▌ dirfi logs error  ====>>  dir logs /b & findstr /I "error"        ▐
-▌   DOSKEY sd=systeminfo $G sysinfo.txt         ▌ sd                ====>>  systeminfo > sysinfo.txt                ▐
-▌   DOSKEY cat=type $*                          ▌ cat ..\bla.log    ====>>  type ..\bla.log                         ▐
-▌   DOSKEY catfi=type $1 $B find /I $2          ▌ cat test.ps1 "write"   ====>>  type test.ps1 | find /I "write"    ▐
+▌   DOSKEY ls=dir $*                            ▌ ls \users\john        ====>>  dir \users\john                     ▐
+▌   DOSKEY cdw=cd $1 $T dir/w $1                ▌ cdw \temp *.bat       ====>>  cd \temp & dir /w *.bat             ▐
+▌   DOSKEY mcd=md $1 $T cd $1                   ▌ mcd logs              ====>>  md logs & cd logs                   ▐
+▌   DOSKEY dirfi=dir $1 /b $B findstr /I $2     ▌ dirfi logs "error"    ====>>  dir logs /b & findstr /I "error"    ▐
+▌   DOSKEY sd=systeminfo $G sysinfo.txt         ▌ sd                    ====>>  systeminfo > sysinfo.txt            ▐
+▌   DOSKEY cat=type $*                          ▌ cat ..\bla.log        ====>>  type ..\bla.log                     ▐
+▌   DOSKEY catfi=type $1 $B find /I $2          ▌ catfi test.ps1 "write"  ====>>  type test.ps1 | find /I "write"   ▐
 ______ Typed ______________________________________ Result __________________________________________________________  
-▌   DOSKEY /MACROS                              ▌ shows a list of all defined macros                                ▐ 
-▌   DOSKEY /HISTORY                             ▌ shows a list of all commands already executed                     ▐ 
-▌   DOSKEY /REINSTALL                           ▌ resets/clears all macros and ALSO the command history             ▐
-▌   DOSKEY /macros > my_macros.txt              ▌ exports current macros to the file my_macros.txt                  ▐ 
-▌   DOSKEY /macrofile=my_macros.txt             ▌ imports macros saved in the file (appends or replaces them)       ▐ 
+▌   DOSKEY cat=                                 ▌ Deletes the 'cat' macro, if it was previously defined.            ▐ 
+▌   DOSKEY /MACROS                              ▌ Shows a list of all defined macros                                ▐ 
+▌   DOSKEY /HISTORY                             ▌ Shows a list of all commands already executed                     ▐ 
+▌   DOSKEY /REINSTALL                           ▌ Resets/clears all macros and ALSO the command history             ▐
+▌   DOSKEY /macros > my_macros.txt              ▌ Exports current macros to the file 'my_macros.txt'                ▐ 
+▌   DOSKEY /macrofile=my_macros.txt             ▌ Imports macros from the specified file (appends or replaces them) ▐ 
+_____________________________________________________________________________________________________________________
     """)      
                 if args_lower == "" or  args_lower.startswith("/macros"):
                     remainder = args[7:].strip()
@@ -866,14 +1390,17 @@ ______ Typed ______________________________________ Result _____________________
                         try:
                             # Saves the file using the environment's current code page
                             with open(filepath, mode, encoding=f'cp{self.current_codepage}', errors='ignore') as f:
-                                for key, value in self.macros.items():
-                                    f.write(f"{key}={value}\n")
+                                if len(self.macros) == 0:
+                                    f.write('\n') # if no macros, MUST write something, just like native doskey would do
+                                else:
+                                    for key, value in self.macros.items():
+                                        f.write(f"{key}={value}\n")
                         except Exception as e:
                             print(FG_RED + f"Error exporting macros file: {e}" + RST_CLR)
                             
                         return False
                     else:
-                        return False # Other unrecognized text after /macros	
+                        return False # Found unrecognized text after /macros
                     
                 elif args_lower.startswith("/macrofile=") or args_lower.startswith("/macrofile ="):
                     filepath = args[10:].strip().removeprefix("=").strip()
@@ -956,7 +1483,7 @@ ______ Typed ______________________________________ Result _____________________
                 
                 elif "=" in args:
                     key, value = args.split("=", 1)
-                    key = key.strip()
+                    key = key.strip().lower()  #Always lower the key in macros dictionary
                     value = value.strip()
                     if not value:
                         self.macros.pop(key, None) # Removes the macro
@@ -965,66 +1492,23 @@ ______ Typed ______________________________________ Result _____________________
                     return False
                     
                 else:
-                    return False # Empty or invalid doskey call (except /?)
-
-            # --- DOSKEY MACRO EXPANSION ---
-            parts = cmd_clean.split(maxsplit=1)
-            if parts:
-                first_word = parts[0]
-                if first_word in self.macros:
-                    macro_val = self.macros[first_word]
-                    rest_of_line = parts[1] if len(parts) > 1 else ""
-                    
-                    # Native DOSKEY special characters substitutions
-                    # We use (?i) in regex to be case-insensitive (e.g., accept $t or $T)
-                    macro_val = re.sub(r'(?i)\$T', '&', macro_val)
-                    macro_val = re.sub(r'(?i)\$G', '>', macro_val)
-                    macro_val = re.sub(r'(?i)\$L', '<', macro_val)
-                    macro_val = re.sub(r'(?i)\$B', '|', macro_val)
-
-                    # Checks if there is any numerical argument marker ($1 to $9) or $*
-                    has_args_marker = bool(re.search(r'\$(\*|[1-9])', macro_val))
-
-                    if has_args_marker:
-                        # Extracts the arguments keeping quoted blocks together
-                        # Ex: 'arg1 "arg 2" arg3' becomes a list: ['arg1', '"arg 2"', 'arg3']
-                        args = re.findall(r'".*?"|\S+', rest_of_line)
-                        
-                        user_command = macro_val
-                        
-                        # Replaces $1 to $9
-                        for i in range(1, 10):
-                            arg_val = args[i-1] if i <= len(args) else ""
-                            user_command = user_command.replace(f"${i}", arg_val)
-                        
-                        # Replaces $* with the entire rest of the original line
-                        user_command = user_command.replace("$*", rest_of_line)
-                    else:
-                        # CMD default behavior: if there are no variables, 
-                        # the typed arguments are just concatenated at the end
-                        user_command = macro_val + (" " + rest_of_line if rest_of_line else "")
-
-                    # Finally, replaces $$ with a literal $ (in case the user escaped it)
-                    user_command = user_command.replace("$$", "$")
-
-                    # Updates execution variables so the rest of the script processes the macro
-                    cmd_clean = user_command.strip()
-                    cmd_lower = cmd_clean.lower()
+                    return False # Empty or invalid doskey call
 
             # Interception: EXIT
-            if cmd_lower == "exit" or cmd_lower.startswith("exit/"):
-                opt = input("Closing emulator session... Do you want to Save the environment state (S/N)? ")
-                if opt.lower().startswith("s"):
+            if cmd_lower == "exit" and not looking_for_help(args):
+                opt = input("Closing emulator session... Do you want to Save the environment state (Y/N)? ")
+                if opt.lower().startswith("y"):
                     self.save_state_f2()            
-                return True
+                return True  #<<--- this will become the return of shell.onecmd() <-- True is the indication to call sys.exit() in main()
 
             # Interception: TITLE
-            if cmd_lower.startswith("title "):
-                args = cmd_clean[5:].strip()
+            if cmd_lower == "title" and not looking_for_help(args):
+                args = cmdline_clean[5:].strip()
                 self.title = args
+                # Proceed with the execution, do NOT return yet
 
             # Interception: START (Open new PyWinCmd window)
-            is_start_base = (cmd_lower == "start ") or (cmd_lower.startswith("start/"))
+            is_start_base = cmd_lower == "start" and args=="" and not looking_for_help(args) 
                     
             # IN CASE it's just 'START' without parameters, we start a new window of OUR PyWinCMD command prompt        
             if is_start_base:
@@ -1041,161 +1525,81 @@ ______ Typed ______________________________________ Result _____________________
                 new_window_command = f'start "" /d "{self.current_dir}"  "{python_exe}" "{script_path}" --spawn-state {b64_state}'
                 os.system(new_window_command)
                 self.last_errorlevel = "0"
-                return
+                return False  # <<-- This will become the return value for shell.onecmd();  True would indicate to call sys.exit() in main() 
 
-            # IN CASE it's the 'START' command followed by some program/command/parameter, it will be executed normally.
-            # This even allows opening a native CMD window via 'START cmd', IF there are no restrictions/policies   
+            # IN CASE it's the 'START' command followed by some program/command/parameter, 
+            # it will be handled and executed by the code below.
+            # This even allows opening a native CMD window via 'START cmd', IF no restrictions/policies   
 
-            # Prepares the execution line (Automatic enveloping in a temporary Batch for PS1, CMD, BAT and 'DOS' INTERNAL commands)
-            execution_line = cmd_clean
-            match_first = re.match(r'^(?:\"([^\"]+)\"|(\S+))', cmd_clean) 
-            
-            flag_assoc_file= False
-            flag_GUI_pgm= False
-            flag_cui_pgm= False
-            flag_ps1=False
-            flag_cmd_bat=False
-            flag_internal_command=False
-            update_state_after_batch=True
-            first_token = None
-            first_token_path = None
-            abs_path=False
-            if match_first:
+        #End-If len(subcommands)==1
 
-                # LET's see if the user 'command' is an  absolut or relative 'path' , and use shutil.which() on it:
-                first_token = match_first.group(1) if match_first.group(1) else match_first.group(2) 
-                if first_token.startswith('\\'): # An absolute PATH was given, starting with '\'
-                    #This search PATHEXT extensions, if it was not given
-                    first_token_path = shutil.which(first_token) # Does NOT need the 'path' argument here
-                    abs_path = True
-                elif len(first_token) > 2 and first_token[1:3] == ':\\' : # An absolute PATH was given, starting with Drive letter
-                    #This search PATHEXT extensions, if it was not given
-                    first_token_path = shutil.which(first_token) # Does NOT need the 'path' argument here
-                    abs_path = True
+        # ----- ADJUST every SUBcommand in the command line -----
+        #So, we have at least one subcommand and args to process OR we have a bunch of these, concatenated by '&', '&&'. '|' or '||'
+        execution_line = user_cmdline.strip()
 
-                # NOW, LET's search for the 'command' in the PATH, only extensions in PATHEXT are looked for 
-                if not first_token_path: # Check if a relative PATH as given
-                    # Below We check if the command/program/script is part of OUR tracked PATH.
-                    # WHY? (we could NOT check at all, and the native CMD would find it in t he PATH - or not). 
-                    # The problem is: if the program is an executable EXE that has Windows GUI, and we just call
-                    # it from our temporary BAT file, then our PyWinCMD prompt will be blocked until the 
-                    # called program is finished (could be MS-Excel, MS-Word, Notepad etc.). That is NOT good !
-                    # So, we find the executable in OUR path to be able to check wether it's a GUI type. If it is,
-                    # the program is called WITHOUT a temporary BAT, ensuring the call will NOT block. 
-                    curr_path=self.current_env.get('PATH', os.environ['PATH'])
-                    curr_path=self.current_dir + ";" + curr_path  #<<--- which() does NOT search in the current dir when the 'path' parameter is used, so we add it, to build a CMD-like behavior
-                    # the which() function returns ONLY one path, whichever has precedence in the PATH
-                    first_token_path = shutil.which(first_token, path=curr_path)
-                #End-if
+        # Iterate backwards through all the SUBcommands and args, so string modification doesn't ruin earlier indices
+        for cmd in reversed(subcommands):
+            start = cmd["start_index"]
+            command = cmd["command"]
+            original_text = cmd["original_text"]
+            maybe_escaped_text = f'{cmd["command"]} {cmd["args"]}'  # args MAY have been escaped with '^', if it has special symbols
 
-                # Not found yet, BUT it could be a file with extension NOT in PATHEXT, like *.xlsx, *.docx, etc
-                if not first_token_path:
-                    if abs_path:
-                        if os.path.exists(first_token):
-                            first_token_path = first_token
-                    else:
-                        if os.path.exists(self.current_dir + os.sep + first_token):  
-                            first_token_path = self.current_dir + os.sep + first_token
+            # Expand from doskey macros, if the SUBcommand is an entry there
+            # PS - The NATIVE Windows CMD, DOSKEY macros have a strict limitation: 
+            #      they are only expanded if they are the very first word on the command line.
+            #      HERE we overcome that limitation and expand it EVEN for concatenated subcommands :)
+            is_doskey_macro, maybe_escaped_new_text = doskey_macro_expansion(maybe_escaped_text)
 
-                if not first_token_path:
-                    # If it is NOT in the PATH, then we consider it an INTERNAL COMMAND (e.g., DIR, ECHO, SET), 
-                    # and it will be enveloped in a temp batch. 
-                    flag_internal_command = True
-                    first_token_path = user_command
-                    arguments = ""
-
-                # At this point, any 'resolvable' extension would have been set in first_token_path, just like the native CMD would do  
-                else: # The command/pgm/partial-path etc, was found in the PATH
-
-                    #Get the arguments, but before check if user_command is surrounded by quotes:
-                    qfirst_token=f'\"{first_token}\"'
-                    if cmd_clean.startswith(qfirst_token): # It came with quotes!
-                        ft = qfirst_token
-                    else:
-                        ft = first_token
-                    # Now uses the correct surroundings to find the len() below:
-                    arguments=cmd_clean[len(ft):].strip()  # Treat as argument everything that comes after the 'command' 
-
-#                   print("Executable or associated file FOUND in path: " + first_token_path )
-                    p_lower = first_token_path.lower()
-
-                    # MUST test every case:
-                    if p_lower.endswith('.ps1'):
-                        flag_ps1 = True
-                    elif  p_lower.endswith( ('.bat', '.cmd',) ):
-                        flag_cmd_bat = True
-                    elif  p_lower.endswith( ('.exe', '.com',) ):
-                        IMAGE_SUBSYSTEM_WINDOWS_GUI = 2
-                        IMAGE_SUBSYSTEM_WINDOWS_CUI = 3
-                        if self.get_exe_subsystem(first_token_path) == IMAGE_SUBSYSTEM_WINDOWS_GUI:  # GUI type / separate apps
-                            # Note that GUI programs, like NOTEPAD, or EXCEL.EXE fall here
-                            flag_GUI_pgm = True
-                        else:  # It's an EXE/COM of type CUI: console program.... and it could be interactive
-                            # Also interactive CUI programs like PYTHON.EXE fall here
-                            flag_cui_pgm = True
-                    else: 
-                        # If file EXISTS,  but has NON EXECUTABLE extensions, like *.DOCX, *.VBS, *.XLSX etc, then it may be associated with some PGM
-#                        print('Assoc file command:   {first_token_path} {arguments}')
-                        flag_assoc_file = True 
-
-            if first_token_path.lower().endswith("cmd.exe") and arguments.lower().startswith("/c"):
-                update_state_after_batch= False  # We SHOULD NOT update state when the command is 'cmd /c', this is the correct native behavior
-
-
-            # Check if the arguments contain '/?' or '/  <spaces> ?', so it is 'getting help' on a command/pgm 
-            args_help = False
-            patt = r"/ *\?"
-            if re.search(patt, arguments):
-                update_state_after_batch = False
-                args_help = True
-
-            # If the 'command' has spaces in it, then we must surround it with quotes
-            if " " in first_token_path:
-               ft_path = f'\"{first_token_path}\"'
+            if is_doskey_macro:
+                execution_line = execution_line[:start] + execution_line[start:].replace(original_text, maybe_escaped_new_text, 1)
+                # TO-DO: if the new_text has concatenated external pgm/scripts, submmit each of them to _adjust_subcommand() 
+                #        PS - Not a priority, let's assume most of the users will use only common CMD commands in macros.
             else:
-               ft_path = first_token_path  
+                #  Adjust the text of the command (necessary in same cases, conditions are checked inside the method below)
+                adjusted_command = self._adjust_subcommand(command)
+                maybe_escaped_new_text = f'{adjusted_command} {cmd["args"]}'  # args MAY have been escaped with '^', if it has special symbols
 
-            # --- IF it is a GUI program or a FOUND associated file (like XLSX or DOCX) then we MUST use 'start'
-            #     otherwise the temporary BAT file will stay blocked forever on the 'call' :(
-            if flag_GUI_pgm or flag_assoc_file:
-               execution_line =  f'start /MIN "Temp" {ft_path} {arguments}' 
+                # Safe replacement: slice the string at the start index, and replace ONLY 
+                # the first occurrence of the original text in the remaining slice.
+                execution_line = execution_line[:start] + execution_line[start:].replace(original_text, maybe_escaped_new_text, 1)
 
-            elif flag_cmd_bat:
-                execution_line = f'call {ft_path} {arguments}' 
+        if execution_line[-1] in ( '<', '>', '&', '|', '^' ):   # native CMD would throw error, BUT we can NOT allow it, because we are going to append a ' & call' command after this content
+            print(FG_RED + "ERROR: Special symbol at the end of the command line." + RST_CLR) 
+            print("Canceled! -  Please correct the input and try again.")
+            return False # Does NOT execute the line (but it will remain in the prompt)
 
-            elif flag_internal_command or args_help:   # If arguments have '/?', then we can NOT use 'call', otherwise gets help for 'call'
-                execution_line = f'{cmd_clean}'  #<<--- Internal commands should NOT use call, to allow '/?' argument to work
+        # --- MAIN EXECUTION block -- envelops the execution line in a temporary BAT file to be executed ---
+        ERR_MARKER = "PWC_ERR_CAPTURE"
+        DIR_MARKER = "PWC_DIR_CAPTURE"
+        DRIVES_MARKER = "PWC_DRIVES_CAPTURE"
+        CHCP_MARKER = "PWC_CHCP_CAPTURE"
+        ENV_MARKER = "PWC_ENV_CAPTURE"
 
-            elif flag_ps1:
-                execution_line = f'powershell.exe -ExecutionPolicy Bypass -File {ft_path} {arguments}'
+        timestamp = int(time.time() * 1000)
+        bat_part1_path = os.path.join(os.environ.get('TEMP', '.'), f'pywincmd_part1_{timestamp}.bat')
+        out_path = os.path.join(os.environ.get('TEMP', '.'), f'pywincmd_out_{timestamp}.txt')
+        err_path = os.path.join(os.environ.get('TEMP', '.'), f'pywincmd_errorlevel_{timestamp}.txt')
+        bat_part2_path = os.path.join(os.environ.get('TEMP', '.'), f'pywincmd_part2_{timestamp}.bat')
 
-            elif flag_cui_pgm: # It's an EXE or COM of type CUI: they are console programs.... and can be interactive
-               # Any interactive CUI program like PYTHON.EXE falls here 
-               # They MUST be 'call'ed, otherwise the interactivity would be LOST (user could NOT interact)               
-                execution_line = f'call {ft_path} {arguments}'  
-            else:
-                print(FG_YELLOW + "Could not found a way to execute this command line:( " + RST_CLR)
-                self.update_prompt_visual()
-                return
+        # IMPORTANT1 - Need this to insert the last errorlevel value in the new CMD /C session, and also,
+        #  to obtain the new last errorlevel (and other state variables) that results from the command line execution.
+        # PS - It's safer to adjust the previous errorlevel this way, otherwise strange things can happen in the substition.
+        # PS2- And... this is exactly the behavior of the native CMD do when executing a script: it substitutes the text  %errorlevel% 
+        #      by the value it has on the moment the script is 'called'/run (--NOT-- with the errorlevel of each previous command in the script )      
+        tweaked_cmdline=re.sub(re.escape("%errorlevel%"), self.last_errorlevel , execution_line , flags=re.IGNORECASE)
+        tweaked_cmdline = f'set "errorlevel=" & cmd /c "exit {self.last_errorlevel}" & {tweaked_cmdline.strip()} & call "{bat_part2_path}"'  
+        # IMPORTANT2 - Note that we also insert a 'set errorlevel=' before the command line. 
+        #              This is NOT to reset the VALUE of %errorlevel%. It is a precaution to avoid a weird effect if the user inadvertently
+        #              enters a command that set a USER variable called 'errorlevel': It would take precedence when resolving '%errorlevel%' 
+        #              This is an odd behavior of Windows CMD that we are trying to mitigate here.  
+        #              So, 'set errorlevel=' just DELETE any eventual user variable with that NAME, restoring the capacity of %errorlevel%.
+        #              AND the command that sets the VALUE of the PREVIOUS execution errorlevel is cmd /c "exit {self.last_errorlevel}".
 
+        # Line below builds the commands to restore the path on each DRIVE mounted
+        drive_restorations = "\n".join([f'cd "{path}"' for path in self.drive_dirs.values()])
 
-            # --- MAIN EXECUTION block -- envelops the execution line in a temporary BAT file to be executed ---
-            ERR_MARKER = "PWC_ERR_CAPTURE"
-            DIR_MARKER = "PWC_DIR_CAPTURE"
-            DRIVES_MARKER = "PWC_DRIVES_CAPTURE"
-            CHCP_MARKER = "PWC_CHCP_CAPTURE"
-            ENV_MARKER = "PWC_ENV_CAPTURE"
-
-            timestamp = int(time.time() * 1000)
-            bat_path = os.path.join(os.environ.get('TEMP', '.'), f'pywincmd_int_{timestamp}.bat')
-            out_path = os.path.join(os.environ.get('TEMP', '.'), f'pywincmd_out_{timestamp}.tmp')
-            out_path_chcp = os.path.join(os.environ.get('TEMP', '.'), f'pywincmd_chcp_{timestamp}.tmp')
-
-            # Builds the commands to restore the state of each drive in the background
-            drive_restorations = "\n".join([f'cd "{path}"' for path in self.drive_dirs.values()])
-
-            bat_content_part1 = f"""@echo off
-
+        bat_part1_content = f"""
+@echo off
 
 @REM This script is ALWAYS written and read with UTF-8 encoding by pywincmd.py
 @REM So, the  UTF-8 codepage MUST be active throughout the execution of this script, EXCEPT before executing the 'execution_line'; 
@@ -1206,33 +1610,55 @@ chcp 65001 >nul
 {drive_restorations}
 cd /d "{self.current_dir}"
 
-@REM restore errorlevel from the previous execution of this BAT:
-cmd /c exit {self.last_errorlevel}
+@REM Below is the 'command' just typed by the user:  
+@rem {cmdline_clean}
 
-@REM ONLY AT THIS POINT restore CHCP eventually set in the previous execution  - immediatelly before calling the new execution line:
+@REM And here is the adjusted 'execution line' that will be executed:
+@REM (we had to make an ajustment to correctly mimic the usage of % errorlevel %, and to concatenate the 'call' to the BAT that saves the state after the execution)
+@rem = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = 
+@rem "{tweaked_cmdline}" 
+@rem = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = 
+
+@REM ONLY AT THIS POINT restore CHCP eventually set in the previous execution (immediatelly before calling the new command line):
 chcp {self.current_codepage} >nul
 
-@REM The variable below  has the 'execution line' just typed by the user:  {execution_line}
-@REM Note that the 'execution line' was set in % PWC_EXECUTION_LINE % env var  by pywincmd just before calling this BAT (visible in that session only)
-@rem PS - must use 'call' below, because we have to absorve env vars set when executing *.cmd or *.bat
-%PWC_EXECUTION_LINE%
+@REM restore errorlevel from the PREVIOUS execution of this BAT (only here, just BEFORE the command line is executed):
+:: cmd /c "exit {self.last_errorlevel}"  # THIS line is now disabled: already inserted this at the begining of the tweaked_cmdline
 
-@REM store in env var the NEW chcp EVENTUALLY modified by the execution line above
-chcp > "{out_path_chcp}"
-set /p NEW_CHCP=<"{out_path_chcp}"
+@REM Note that the 'tweaked_exec line' was set in % PWC_TWEAKED_CMDLINE % env var  by pywincmd just before calling this BAT (visible in that session only)
+@REM An env var is used to hold the command line because an env-var is  ENCODING AGNOSTIC  (works in any codepage) !
+@REM This is required, otherwise the execution_line COULD be misinterpreted if CHCP was called in a previous execution line 
+@REM and the current execution line (got from our console) has NON-ASCII characters (Common in latin files/folders names )
+@REM
+@REM Unfortunatelly the ONLY way to correctly expand env-vars in the command line is using CMD /C (better NOT try to replace it)
+@REM  but it has a side effect:  there is NO simple way to get the new STATE after the execution (the STATE = errorlevel 
+@REM  as well as other variables and information eventually modified in that CMD session).
+@REM  That's why we tweaked the original execution_line and ADDED a command to call ANOTHER BAT that save the sate in a file.
+cmd /c  "%PWC_TWEAKED_CMDLINE%" 
+        """
 
-            """
-
-            #Second part of the temporary BAT:     
-            bat_content_part2 = f"""
-@REM This extra echo off is necessary if the 'execution line' was cmd /k or a long BAT, when exited with Ctrl+C or 'exit'
+        # This is the BAT that saves the new STATE after the execution of the command line
+        bat_part2_content = f"""
 @echo off
+@REM This script will be CALLed by the  cmd /c  "%PWC_TWEAKED_CMDLINE%"  that exists in the first script BAT
+@REM  PS - A final SUBcommand was added to the original execution_line to do that :)
+@REM This script will save the errorlevel that the calling CMD/C  had at the moment of the call
+@REM  and save many other state variables from that session too... because this called script is in the SAME session.
 
-@REM Now restore the UTF-8 codepage again, SO the MARKERS below will be saved in the TMP output file ALWAYS with that encoding
+@REM The FIRST thing to do is to save the errorlevel from the caller BAT script
+@REM PS - The below 'set' MUST be in (this) separate BAT script !! <<---------------------- <<---------------------- IMPORTANT
+@REM      And it MUST be called by the command line itself, that's why we injected the call in the tweaked_cmdline
+set PWC_ERROR_LEVEL=%errorlevel%
+
+@REM Preserve in env var the NEW chcp EVENTUALLY modified by the command line just executed by the first script
+FOR /F "tokens=2 delims=:" %%A IN ('chcp') DO SET NEW_CHCP=%%A
+
+@REM Now restore the UTF-8 codepage again, because the MARKERS below MUST be saved in the TMP output file ALWAYS with that encoding
 chcp 65001 >nul
 
 (
-echo {ERR_MARKER} %errorlevel%
+echo {ERR_MARKER} 
+echo %PWC_ERROR_LEVEL%
 echo {DIR_MARKER}
 cd
 echo {DRIVES_MARKER}
@@ -1247,112 +1673,129 @@ echo %NEW_CHCP%
 echo {ENV_MARKER}
 set
 ) > "{out_path}"
-            """
+chcp %NEW_CHCP% > nul
+        """ 
 
-            bat_content = bat_content_part1 + bat_content_part2  if update_state_after_batch  else  bat_content_part1 
-            with open(bat_path, 'w', encoding='utf-8', errors='ignore') as f: #  'utf-8' is mandatory here
+        with open(bat_part1_path, 'w', encoding='utf-8', errors='ignore') as f: #  'utf-8' is mandatory here
+            f.write(bat_part1_content)
 
-                f.write(bat_content)
+        with open(bat_part2_path, 'w', encoding='utf-8', errors='ignore') as f: #  'utf-8' is mandatory here 
+            f.write(bat_part2_content)
 
-
-            # Now, saves the execution line as an ENV VARIABLE, as they are ENCODING AGNOSTIC  (works in any codepage) !
-            # This is required, otherwise the execution_line COULD be misinterpreted if CHCP was called in a previous execution line 
-            # and the current execution line has NON-ASCII characters (Common in latin files/folders names )
-            self.current_env["PWC_EXECUTION_LINE"] = execution_line #<-- this will be visible to the temp BAT, and well interpreted, regarding the active codepage
-
-            old_environ = dict(os.environ)
-            os.environ.clear()
-            os.environ.update(self.current_env)
-                
+        if self.debug:
+            print(f'The temporary BAT files where generated and you may inspect them now !')
+            print(f'    {bat_part1_path}\n    {bat_part2_path}')
             try:
-                # ############################   HERE IS THE 'MAGIC'   #############################
-                # subprocess.run() inherits the current console natively, supporting any interaction,
-                # unlike a subprocess.Popen(). This allows us to run programs 'inside' the console where 
-                # this *.py is running. All inputs and outputs of the executed program are done in the 
-                # same 'command prompt', until the called program is finished.  After that, our simulated
-                # 'prompt' reappears again. 
-                # It even allows running another 'python' interactively inside our prompt window!
-                subprocess.run(f'cmd /c "{bat_path}"', 
-                            cwd=self.current_dir, 
-                            )
-            except KeyboardInterrupt:
-                print(FG_YELLOW + "\n[PWC] Temporary BAT process interrupted by the user. Moving on..." + RST_CLR)
+                input("Hit ENTER when you are ready to continue the execution of the command line ")
+            except:  # If user hits Ctrl+Break during the input() execution
+                pass
 
-            os.environ.clear()
-            os.environ.update(old_environ)
+        # Now, saves the execution line as an ENV VARIABLE, because they are ENCODING AGNOSTIC  (works in any codepage) !
+        # This is required, otherwise the execution_line COULD be misinterpreted if CHCP was called in a previous execution line 
+        # and the current execution line has NON-ASCII characters (Common in latin files/folders names )
+        self.current_env["PWC_TWEAKED_CMDLINE"] = tweaked_cmdline #<-- this will be visible to the temp BAT, and well interpreted, regarding the active codepage
 
-            # --- ENVIRONMENT STATE SYNCHRONIZATION ---
-            if not update_state_after_batch:
-                # We would do NOTHING here, but there is a little quirk that can affect the console title...
-                # Recovers the title; it could have changed if the given command was 'cmd /c' setting a new TITLE, 
-                # something unlikely to occur, but here we ensure the STATE is consistent. 
-                subprocess.run(f'cmd.exe /c "TITLE {self.title}"')
+        # We are updating OUR python-console environment with the last command resultant environment that was stored, 
+        # so that it will be inheritec by the NEW and clean process that we are going to start (see below)
+        # (Maybe we could just set the'env' parameter as self.current_env ?  TO-DO: test effect on user-typed NON-Ascii text  )
+        # (Note: changes made in the environment by the executed command line do NOT reflect back )
+        old_environ = dict(os.environ)
+        os.environ.clear()
+        os.environ.update(self.current_env)
+            
+        try:
+            # ############################   HERE IS THE 'MAGIC'   #############################
+            # subprocess.run() inherits the current console natively, supporting any interaction,
+            # unlike a subprocess.Popen(). This allows us to run programs 'inside' the console where 
+            # this *.py is running. All inputs and outputs of the executed program are done in the 
+            # same 'command prompt', until the called program is finished.  After that, our simulated
+            # 'prompt' reappears again. 
+            # It even allows running another 'python' interactively inside our prompt window!
+            if self.verbosity:
+                print(FG_LGRAY + f' ~~~~~~~~~~~~  Executing adjusted cmdline via temporary BAT script  ~~~~~~~~~~~~ \nCMD /C " {tweaked_cmdline} " ' + RST_CLR) 
+            subprocess.run(f'cmd /c "{bat_part1_path}"', 
+                        cwd=self.current_dir, 
+                        )
+            # Note: bath_path2 is called FROM bat_path1 to save the STATE after the command line is executed
 
-            else: # STATE will be updated from the existing state when the executed command/program finished
-                if os.path.exists(out_path):
-                    try:
-                        with open(out_path, 'r', encoding='utf-8', errors='ignore') as f:  #  'utf-8' is mandatory here
-                            text_output = f.read()
-                        
-                        if ERR_MARKER in text_output:
-                            _, state_part = text_output.split(ERR_MARKER, 1)
-                            err_part, resto1 = state_part.split(DIR_MARKER, 1)
-                            dir_part, resto2 = resto1.split(DRIVES_MARKER, 1)
-                            drives_part, resto3 = resto2.split(CHCP_MARKER, 1)
-                            chcp_part, env_part = resto3.split(ENV_MARKER, 1)
+        except KeyboardInterrupt:
+            print(FG_YELLOW + "\n[PWC] Temporary BAT process interrupted by the user. Moving on..." + RST_CLR)
 
-                            self.last_errorlevel = err_part.strip().split('\n')[0].strip().replace('\r', '')
-                            self.current_dir = dir_part.strip().split('\n')[0].strip().replace('\r', '')
+        os.environ.clear()
+        os.environ.update(old_environ)
 
-                            # Reads the states of each drive and updates the dictionary
-                            self.drive_dirs.clear()
+        # --- ENVIRONMENT STATE SYNCHRONIZATION ---
+        # Must ALWAYS update the state with the eventual modifications made by the command/program that just finished
+        # (it is necessary even when the first token of the command line executed was a GUI or CUI program, because 
+        #  there MAY BE other tokens/commands concatenated by '&' that could change STATE, and we are NOT checking that)
+        if os.path.exists(out_path):
+            try:
+                with open(out_path, 'r', encoding='utf-8', errors='ignore') as f:  #  'utf-8' is mandatory here
+                    text_output = f.read()
+                
+                if ERR_MARKER in text_output:
+                    _, state_part = text_output.split(ERR_MARKER, 1)
+                    err_part, resto1 = state_part.split(DIR_MARKER, 1)
+                    dir_part, resto2 = resto1.split(DRIVES_MARKER, 1)
+                    drives_part, resto3 = resto2.split(CHCP_MARKER, 1)
+                    chcp_part, env_part = resto3.split(ENV_MARKER, 1)
+
+                    self.last_errorlevel = err_part.strip().split('\n')[0].strip().replace('\r', '')
+                    if self.verbosity:
+                        print(FG_LGRAY + f" ~~~~~~~~~~~~  Current errorlevel: {self.last_errorlevel} (Note that some CMD commands do NOT update this value)  ~~~~~~~~~~~~ " + RST_CLR)
+                    self.current_dir = dir_part.strip().split('\n')[0].strip().replace('\r', '')
+
+                    # Reads the states of each drive and updates the dictionary
+                    self.drive_dirs.clear()
+                    current_drive_letter = None
+                    for line in drives_part.replace('\r', '').split('\n'):
+                        line = line.strip()
+                        if not line: continue
+                        if re.match(r'^=[A-Z]=$', line):
+                            current_drive_letter = line[1]
+                        elif current_drive_letter:
+                            self.drive_dirs[current_drive_letter] = line
                             current_drive_letter = None
-                            for line in drives_part.replace('\r', '').split('\n'):
-                                line = line.strip()
-                                if not line: continue
-                                if re.match(r'^=[A-Z]=$', line):
-                                    current_drive_letter = line[1]
-                                elif current_drive_letter:
-                                    self.drive_dirs[current_drive_letter] = line
-                                    current_drive_letter = None
 
-                            cp_match = re.search(r'\d+', chcp_part)
-                            if cp_match: self.current_codepage = cp_match.group()
-                            # TO-DO: Decide if we would apply the current_codepage to the REAL console of this python session
-                            #        We could do that via another subprocess.run(f'\windows\system32\chcp.com {self.current_codepage}}')
-                            #        PS - Doing that will NOT have effect on the FILE input/output, only console I/O made BY THIS PYTHON would be affected.
+                    cp_match = re.search(r'\d+', chcp_part)
+                    if cp_match: self.current_codepage = cp_match.group()
+                    # TO-DO: Decide if we would apply the current_codepage to the REAL console of this python session
+                    #        We could do that via another subprocess.run(f'\windows\system32\chcp.com {self.current_codepage}}')
+                    #        PS - Doing that will NOT have effect on the FILE input/output, only console I/O made BY THIS PYTHON would be affected.
 
-                            new_env = {}
-                            clean_env_part = env_part.replace('\r', '')
-                            for line in clean_env_part.split('\n'):
-                                line = line.strip()
-                                if '=' in line:
-                                    if any(m in line for m in [DIR_MARKER, ENV_MARKER, CHCP_MARKER, ERR_MARKER]): continue
-                                    k, v = line.split('=', 1)
-                                    k_upper = k.strip().upper()
-                                    if k_upper: new_env[k_upper] = v.strip()
-                            
-                            if new_env: 
-                                self.current_env = new_env
-                                if 'PROMPT' not in self.current_env: self.current_env['PROMPT'] = "$P$G"
-                    except Exception:
-                        pass
+                    new_env = {}
+                    clean_env_part = env_part.replace('\r', '')
+                    for line in clean_env_part.split('\n'):
+                        line = line.strip()
+                        if '=' in line:
+                            if any(m in line for m in [DIR_MARKER, ENV_MARKER, CHCP_MARKER, ERR_MARKER]): continue
+                            k, v = line.split('=', 1)
+                            k_upper = k.strip().upper()
+                            if k_upper: new_env[k_upper] = v.strip()
+                    
+                    if new_env: 
+                        self.current_env = new_env
+                        if 'PROMPT' not in self.current_env: self.current_env['PROMPT'] = "$P$G"
+            except Exception:
+                pass
 
-            # Silent cleanup
-            for p in [bat_path, out_path, out_path_chcp]:
-                try: os.remove(p)
-                except: pass
+        # Silent cleanup
+        try:
+            for p in [bat_part1_path, bat_part2_path, out_path ]:
+                os.remove(p)
+        except: pass
 
-            self.update_prompt_visual()
+        self.update_prompt_visual()
+        return False  #<<--- This will become the return value from shell.onecmd() -- True would indicate we want to EXIT
 
 
     def do_help(self, arg):
         """
-        Overrides the default help of Python's cmd.Cmd module and 
-        passes the command to the native Windows CMD help.
+        Called when user types 'help xxxxxx'.
+        This function overrides the default help of cmd.Cmd module and  passes the command to the native Windows CMD help.
         """
         klarg = arg.strip().lower()
-        if klarg.startswith('doskey'):
+        if klarg.startswith('doskey'):   # The user typed 'HELP doskey or HELP doskeyxxxx yyyy zzzz, whathever, consider a call for Help on DOSKEY
             command = 'DOSKEY /?'
         else:
             command = f"HELP {arg}".strip()
@@ -1372,7 +1815,7 @@ set
 
 
 
-if __name__ == '__main__':
+def main():
     # Enables support for native ANSI codes in Windows 10/11 console
     os.system('')
 
@@ -1442,3 +1885,9 @@ if __name__ == '__main__':
             print(f"{FG_RED}Unexpected ERROR during PyWinCmd execution:")
             print(f"{FG_PURPLE}{e}{RST_CLR}")
             continue
+
+
+if __name__ == '__main__':
+    main()
+
+

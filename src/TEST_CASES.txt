@@ -1,0 +1,133 @@
+
+========================================================================
+TEST CASES   (all these commands must be tested after changing the code)
+========================================================================
+
+----------------- ENV VARIABLES EXPANSION -------------
+
+First command line:     
+  set "BLA=AAAAAAAAAA aaaaaaaaaaa" & set BLU=UuuuuuuuuU & set BL
+Result:
+  Success -->  Variables are set
+
+Second command line: 
+  dir *.txt &  (echo %BLA% & echo %NOTHING% & echo %BLU%) >"lixo atenção.txt" && type  "lixo atenção.txt"
+Result: 
+  Success -->  Variables BLA and BLU expanded values are printed inside the file "lixo atenção.txt".
+               Because variable NOTHING is not defined, it correctly appears as a text: '%NOTHING%'
+               (The echo of %NOTHING% should NOT appear as '' nor as a message 'ECHO is on/off')
+
+Third command line:     
+   cmd /c "exit 0" &  echo %errorlevel% & cmd /c "exit 888"  & echo %errorlevel% & if errorlevel 888 (echo Captured)
+Result:
+   Success -->  Echoes: 0, 0, Captured     (if you try this command on the NATIVE cmd prompt, would get the same results)
+
+Fourth command line: 
+   echo %errorlevel% & cmd /c "exit 888"  & echo %errorlevel% & if errorlevel 888 (echo Captured)
+Result:
+   Success -->  Echoes: 888, 888, Captured (if you try this command on the NATIVE cmd prompt, would get the same results - PS- execute twice)
+Fifth command line: 
+  chcp & cd non_existent_folder
+Success -->   If the command line verbosity is ON (via F5), then a final message says that current errorlevel is 1 (because the CD command fails )
+              Typing 'echo %errorlevel%' after the command line execution also prints 1.
+
+
+-----------------  DOSKEY MACROS ---------------
+doskey /?
+  Result: Success, the help screen for doskey is displayed.
+
+doskey catfi=type $1 $B find /I $2
+  Result: Success, the macro is registered.
+
+doskey /macros > macros_doskey.txt
+  Result: Success, all macros are listed inside the .txt file
+
+catfi LICENSE.txt "fair use"  
+  Result: Success, all lines of LICENSE.txt with the string "fair use" are displayed
+
+
+-----------------  SPECIAL COMPLEX CASES --------------
+
+dir *.txt & (   time / ?   & python -m pip list  & echo MMMMMM ) > "Saída atenção.txt 2>&1&notepad&&(echo 1 & echo 2)>>"Saída atenção.txt" 
+  Result: PywinCMD does NOT allow running this line, prints an 'Unbalanced quotes' error and ask for corrections.  
+          -- If running in the native CMD prompt, it would raise an error message too --about unexpected text-- and would NOT execute anything.
+
+dir *.txt & ((  time / ?   & python -m pip list  & echo MMMMMM ) > "Saída atenção.txt" 2>&1&notepad&&(echo 1 & echo 2)>>"Saída atenção.txt" 
+  Result: PywinCMD prints an 'Unbalanced parentheses' error  (which occurs before 'time') and asks if user wants to proceed.
+          -- if the cmdline were running in the native CMD prompt, it would print a "More?" message, asking for completion
+             (except when the mismatch is due to parenthesis in folder/file names or in echo commands, those are accepted)
+          -- But PywinCMD can not show the "More?" message, because it is running CMD /C which is non-interactive)  
+             So, in case the user proceeds, the "More?" is not displayed and the execution is just canceled.
+  Q - So, why doesn't PyWinCMD just forbid unbalanced parenthesis? A- Because they MUST be allowed in folder/filenames and echo arguments.
+
+dir *.txt & (  time / ?   & python -m pip list  & echo MMMMMM ) > "Saída atenção.txt" 2>&1&notepad&&(echo 1 & echo 2)>>"Saída atenção.txt" && echo ****** FILE CONTENT ****** && type  "Saída atenção.txt"
+  Result: Success
+        -- Notepad opened in background, without freezing the prompt line
+        -- Content of "Saída atenção.txt" printed with the 'time' command help, after the header "****** FILE CONTENT ******"
+
+
+----------------- OTHER POSSIBLE SCENARIOS -------------
+
++-------------------------------------------------------+-------------------------------------------------------------------------------+
+| Command Line (Simulation)                             | Result (Success / Error) and Reason                                           |
++-------------------------------------------------------+-------------------------------------------------------------------------------+
+| "%CD%\examples\example_XLSX_to_be_called.xlsx"        | Success: The xlsx file is opened by MS-Excel (just like in native CMD prompt) |
+| dir *.txt & echo. & echo %BLA%                        | Success: Simple and correct commands concatenation                            |
+| pushd C:\ && dir Wind*  | find /I "dows" &popd        | Success: Logical operators && and pipe | are well structured                  |
+| (echo A & echo B) > out.txt && type out.txt           | Success: Parentheses block with redirection at the end                        |
+| dir/ad/b "C:\Users\All Users" & pause                 | Success: Switches /ad/b glued to the dir command (ok)                         |
+| @echo off & (for %i in (*.txt) do (echo --%i-- & type "%i"))  | Success: Use of @ to silence the command and valid parentheses        |
+| ping 127.0.0.1 -n 1 >nul 2>&1 && echo OK              | Success: Complex redirection >nul 2>&1 parsed correctly                       |
+| echo Hello ^& echo World                              | Success: The ^ escapes the &. Treated as a single echo command.               |
+| (dir *.log & echo log) >> "all.log" 2>&1 & type all.log   | Success: Grouping with append redirection (>>) and file descriptor (2>&1) |
+| echo a & & echo b                                     | CMD Error: Two consecutive operators without a command in between             |
+| dir | & echo b                                        | CMD Error: Two consecutive operators without a command in between             |
+| & echo failed                                         | CMD Error: The line starts with an operator. CMD rejects it                   |
+| echo failed |                                         | CMD Error: The line ends with an operator. Native CMD prompt allows it        |                              |
+|                                                                    But PyWinCMD appends '& call...': fails (as it should)             |   
+| echo "-|&&|-" >> out.txt && findstr /C:"&&" out.txt  | Success: The && is protected by quotes and treated as text (argument)          |
+| ( ( echo 1 & echo 2 ) & echo 3 )                      | Success: Nested parentheses that are perfectly balanced                       |
+| dir "C:\Users\All Users" & echo "Unclosed             | Parser Error: Unbalanced quotes..   Native CMD prompt would allow it          |                                                                    , PyWinCMD appends '& call...': fails   |   
+|                                                                       But PyWinCMD appends '& call...', so it MUST fail (as it did)   |
+| echo teste ) & echo fim                               | Parser Error: Unbalanced parenthesis.. BUT, if user proceeds then... it will  | 
+|                                                                       succeed, unbalanced parentheses are allowed in the echo command |
+| ((dir && echo Step1 done) & echo Step2 done           | CMD More: THIS kind of unbalanced parentheses would print 'More?' in the      | 
+|                                                                   native CMD prompt, BUT PywinCMD uses a CMD/C "execution_line",      |
+|                                                                   with no interactiviy:  execution is just canceled by CMD/C          |
+| echo 1 > > out.txt                                    | CMD Error: Invalid space between > symbols. CMD does not interpret > > as >>  |
+| echo 1 >>out.txt 2>>&1& echo Fim                      | Success: Glued redirectors and concatenators (2>&1&). Parsed perfectly        |
+| mkdir "teste" 2> nul || (echo Falha & exit /b 1)      | Success: Classic error handling with || followed by a () block                |
+| chkdsk/scan & echo OK                                 | Success: Executable name with a glued switch /scan - correctly interpreted    |
+| echo "Text with parenthesis ( and & inside" & dir     | Success: Parentheses and & are inside quotes; ignored as logical operators    |
+| >>out.txt echo %BLA%                                  | Success: CMD allows the redirector to be placed at the very beginning         |
+| (echo a & (echo b > "unclosed.txt ) & dir             | Parser Error: Unbalanced quotes.. BUT, if user proceeds then...               |
+|                                                                       the execution inside the temp CMD/C silently fails              |
+| echo teste >&2                                        | Success: Valid redirection using an ampersand as a stream handler             |
+| start /b "" "C:\Windows\System32\ipconfig.exe" & echo Started  | Success: Use of empty quotes "" followed by a quoted path to start   |
+| set "%VAR_&_IN_THE_NAME=ok"                            Success, the '&' symbol is allowed in the name of environment variables        |
+| echo  ^(Escaped parenthesis^)                         | Success: Parentheses escaped with ^. Parser correctly ignores them            |
+| del lixo.txt && echo Atenção>lixo.txt && type lixo.txt| Success: File lixo.txt created containing 'Atenção'                           |
+| chcp 1252                                             | Success: codepage changed                                                     |
+|                                                         TIP: Always run chcp in its own command line; concatenated commands may NOT   |
+|                                                              behave well (the same recommendation applies to the native CMD prompt)   |
+| type lixo.txt                                         | Success: But the content of lixo.txt should be printed like: 'Aten‡Æo'        |
+| chcp 850                                              | Success: codepage changed - TIP: Always run chcp in its own command line      |
+| type lixo.txt                                         | Success: Now the content of lixo.txt should be printed as 'Atenção' again     |
+| echo Quoted "&" in filename > "file(&(" & type file*  | Success: The symbol '&' is (unfortunatelly) allowed in file name by Windows   |
+|                                                       |          PS - but requires the use of surrounding quotes when referring to it |
+| type "file(&("                                        | Success: Filename with quoted '&' -- content will be displayed                |
+| echo More content >> "file(&("                        | Success: Filename with quoted '&' -- content will be added                    |
+
+| catfi "file(&(" "quoTEd"                              | Success: Filename with quoted '&' used as argument of doskey macro.           |
+|                                                       |          Result: The line of the file with the text 'Quoted'    is displayed  |
+|                                                       |          PS - before running this, define 'catfi' as shown in doskey help     |
+| echo Concatenated macro works: & catfi "file(&(" "ore" | Success: The concatenated 'catfi' macro is expanded and executed.            |
+|                                                       |          Result: All lines  with the text 'ore' are displayed                 |
+|                                                       |          PS - this is PywinCMD enhancement, native CMD does NOT allow         |
+|                                                       |               concatenating doskey macros.                                    |
+| src                                                   |  Success: If you are in the PyWinCMD home folder, a Windows-Explorer window   |
+|                                                       |           will open showing the 'src' folder content                          |
+|                                                       |           PS - this is PywinCMD enhancement, native CMD does NOT allow it     |
+| %CD%                                                  |  Success: A Windows-Explorer window opens showing the current folder content  |
+|                                                       |           PS - this is PywinCMD enhancement, native CMD does NOT allow it     |
++-------------------------------------------------------+-------------------------------------------------------------------------------+
